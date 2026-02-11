@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US Treasury Debt Analysis</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>US Treasury Debt Issuance Tracker</h1>
+            <p class="subtitle">Real-time analysis of US Treasury debt from 2006-2026</p>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <div class="controls">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate" value="2006-01-01">
+                
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate" value="2026-01-31">
+                
+                <button onclick="fetchData()">Update Chart</button>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="treasuryChart"></canvas>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>Total Issued</h3>
+                    <p id="totalIssued">Loading...</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Expired</h3>
+                    <p id="totalExpired">Loading...</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Net Change</h3>
+                    <p id="netChange">Loading...</p>
+                </div>
+            </div>
+
+            <h2 class="section-title">Economic Indicators - Monthly % Change</h2>
+
+            <div class="chart-container">
+                <h3 class="chart-title">Core Inflation, Headline Inflation & Oil Prices (Monthly % Change)</h3>
+                <canvas id="economicChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Major Foreign Holders of US Treasury Securities</h2>
+
+            <div class="chart-container">
+                <h3 class="chart-title">Top 5 Foreign Holders (Billions USD)</h3>
+                <canvas id="foreignHoldersChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Foreign Holdings as Percentage of Total US Treasury Debt</h2>
+
+            <div class="chart-container">
+                <h3 class="chart-title">Top 5 Foreign Holders (% of Total Debt)</h3>
+                <canvas id="percentageChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data sources: US Treasury Fiscal Data API, FRED (Federal Reserve), Yahoo Finance</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

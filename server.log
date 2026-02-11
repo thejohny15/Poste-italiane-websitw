@@ -1,0 +1,7 @@
+Starting API server on http://localhost:5001
+Get your free FRED API key at: https://fred.stlouisfed.org/docs/api/api_key.html
+Update the fred_api_key variable in this file with your key
+ * Serving Flask app 'api_server'
+ * Debug mode: on
+Address already in use
+Port 5001 is in use by another program. Either identify and stop that program, or start the server with a different port.
