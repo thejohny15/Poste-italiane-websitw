@@ -7,9 +7,11 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 import requests
 import re
+from io import StringIO
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for browser requests
@@ -17,6 +19,20 @@ CORS(app)  # Enable CORS for browser requests
 # FRED API - Register for free at https://fred.stlouisfed.org/docs/api/api_key.html
 # For now, using public data endpoints
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
+# Replace with your FRED API key or set via environment in production
+FRED_API_KEY = "e1260575e1dbea9b426f27505c956e8b"
+
+
+def to_float_or_none(value):
+    if value is None:
+        return None
+    v = str(value).strip().lower()
+    if v in {'n.a.', 'n.a', 'na', '.', '-'}:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 def fetch_fred_data(series_id, start_date, end_date, api_key="demo"):
     """Fetch data from FRED API"""
@@ -37,6 +53,187 @@ def fetch_fred_data(series_id, start_date, end_date, api_key="demo"):
     except Exception as e:
         print(f"Error fetching FRED data: {e}")
         return []
+
+
+def monthly_average_from_daily(series):
+    """Convert daily (date, value) series to monthly average keyed by YYYY-MM."""
+    buckets = {}
+    for date_str, value in series:
+        month_key = date_str[:7]
+        buckets.setdefault(month_key, []).append(value)
+    return {k: sum(v) / len(v) for k, v in buckets.items() if v}
+
+
+def parse_slt3_holdings_text(text, country_names):
+    """Parse TIC SLT table 3 (txt or html) and return long-term holdings by country/date."""
+    data = {country: [] for country in country_names}
+
+    alias_map = {}
+    for country in country_names:
+        key = country.strip().lower()
+        alias_map[key] = country
+        if country == 'China':
+            alias_map['china, mainland'] = country
+            alias_map['"china, mainland"'] = country
+
+    def resolve_country(raw_country):
+        raw = str(raw_country).strip().lower()
+        raw = re.sub(r'\s+', ' ', raw)
+        return alias_map.get(raw)
+
+    # HTML source (slt_table3.html)
+    if '<table' in text.lower() and '<td' in text.lower():
+        try:
+            tables = pd.read_html(StringIO(text))
+            if tables:
+                df = tables[0]
+                first_col = df.iloc[:, 0].astype(str).str.strip().str.lower()
+                header_rows = first_col[first_col == 'country'].index.tolist()
+                start_idx = header_rows[0] + 1 if header_rows else 0
+                body = df.iloc[start_idx:].copy()
+
+                for row in body.itertuples(index=False):
+                    if len(row) < 6:
+                        continue
+                    country = resolve_country(row[0])
+                    if not country:
+                        continue
+
+                    date = str(row[2]).strip()
+                    if not re.match(r'^\d{4}-\d{2}$', date):
+                        continue
+
+                    long_term_holdings_mn = to_float_or_none(row[5])
+                    if long_term_holdings_mn is None:
+                        continue
+                    long_term_holdings = long_term_holdings_mn / 1000.0
+
+                    data[country].append({'date': f"{date}-01", 'holdings': long_term_holdings})
+                return data
+        except Exception as e:
+            print(f"Error parsing SLT HTML table: {e}")
+
+    # TXT source (slt_table3.txt)
+    line_pattern = re.compile(
+        r'^(.*?)\s+\d+\s+(\d{4}-\d{2})\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+    )
+
+    for raw_line in text.split('\n'):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        m = line_pattern.match(line)
+        if not m:
+            continue
+
+        country = resolve_country(m.group(1))
+        if not country:
+            continue
+
+        date = m.group(2)
+        long_term_holdings_mn = to_float_or_none(m.group(5))
+        if long_term_holdings_mn is None:
+            continue
+        long_term_holdings = long_term_holdings_mn / 1000.0
+
+        data[country].append({'date': f"{date}-01", 'holdings': long_term_holdings})
+
+    return data
+
+
+def merge_historical_recent_maps(historical_map, recent_map, override_last_months=12):
+    """
+    Merge two date->value maps:
+    - keep full historical baseline
+    - overwrite with recent source for the last N months of historical overlap
+    - always include dates that exist only in recent source (e.g. newest year)
+    """
+    if not historical_map:
+        return dict(recent_map)
+    if not recent_map:
+        return dict(historical_map)
+
+    merged = dict(historical_map)
+    max_hist = max(pd.to_datetime(list(historical_map.keys())))
+    cutoff_ts = max_hist - pd.DateOffset(months=max(override_last_months - 1, 0))
+    cutoff = cutoff_ts.strftime('%Y-%m-%d')
+
+    for date, value in recent_map.items():
+        if date not in merged or date >= cutoff:
+            merged[date] = value
+
+    return merged
+
+def parse_tic_text(text, country_patterns):
+    month_map = {
+        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+    }
+    data = {key: [] for key in country_patterns.keys()}
+    lines = text.split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if 'Country' in line and not line.strip().startswith('#'):
+            date_tokens = re.findall(r'\b\d{4}-\d{2}\b', line)
+            dates = []
+            if date_tokens:
+                dates = [f"{d}-01" for d in date_tokens]
+            else:
+                months = []
+                years = []
+                for j in range(i, min(i + 6, len(lines))):
+                    months = re.findall(r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b', lines[j])
+                    if len(months) >= 6:
+                        break
+                for j in range(i, min(i + 6, len(lines))):
+                    years = re.findall(r'\b(?:19|20)\d{2}\b', lines[j])
+                    if years:
+                        break
+                if years:
+                    fixed_months = ['Dec', 'Nov', 'Oct', 'Sep', 'Aug', 'Jul', 'Jun', 'May', 'Apr', 'Mar', 'Feb', 'Jan']
+                    if len(years) >= len(fixed_months):
+                        years = years[:len(fixed_months)]
+                    else:
+                        years = [years[0]] * len(fixed_months)
+                    dates = [f"{year}-{month_map[month]:02d}-01" for month, year in zip(fixed_months, years)]
+                elif months and years and len(months) == len(years):
+                    dates = [f"{year}-{month_map[month]:02d}-01" for month, year in zip(months, years)]
+
+            if not dates:
+                i += 1
+                continue
+
+            j = i + 1
+            while j < len(lines):
+                data_line = lines[j]
+                if not data_line.strip() or data_line.strip().startswith('Of which'):
+                    break
+                if 'Country' in data_line and j != i:
+                    break
+
+                number_matches = list(re.finditer(r'\d+\.\d+', data_line))
+                if not number_matches:
+                    j += 1
+                    continue
+
+                country_name = data_line[:number_matches[0].start()].strip()
+                for country_key, patterns in country_patterns.items():
+                    pattern_list = patterns if isinstance(patterns, list) else [patterns]
+                    if any(p in country_name for p in pattern_list):
+                        values = [float(m.group()) for m in number_matches]
+                        for idx, date in enumerate(dates[:len(values)]):
+                            data[country_key].append({
+                                'date': date,
+                                'holdings': values[idx]
+                            })
+                        break
+                j += 1
+            i = j
+        else:
+            i += 1
+    return data
 
 def calculate_monthly_change(data):
     """Calculate month-over-month percentage change"""
@@ -91,7 +288,7 @@ def get_economic_data():
     
     # Note: Replace 'demo' with your actual FRED API key
     # Get it free at: https://fred.stlouisfed.org/docs/api/api_key.html
-    fred_api_key = "e1260575e1dbea9b426f27505c956e8b"  # Your FRED API key
+    fred_api_key = FRED_API_KEY
     
     # Fetch CPI data from FRED
     # CPIAUCSL = All Items CPI (Headline)
@@ -145,111 +342,101 @@ def health_check():
 def get_foreign_holders():
     """Fetch foreign holders data - properly parses the grid structure by year sections"""
     try:
-        url = 'https://ticdata.treasury.gov/Publish/mfhhis01.txt'
+        historical_url = 'https://ticdata.treasury.gov/Publish/mfhhis01.txt'
+        recent_url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.html'
         
-        print(f"\nFetching foreign holders data from {url}")
-        
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        
-        text = response.text
-        lines = text.split('\n')
-        
-        # Storage for all data
-        all_data = {
+        # Storage for historical + recent data separately
+        hist_data = {
             'Japan': [],
             'China': [],
             'United Kingdom': [],
             'Belgium': [],
-            'Cayman Islands': []
+            'Luxembourg': [],
+            'France': [],
+            'Ireland': [],
+            'Norway': [],
+            'Germany': [],
+            'Spain': [],
+            'Italy': []
         }
+        recent_data = {k: [] for k in hist_data.keys()}
         
         country_patterns = {
             'Japan': 'Japan',
             'China': ['"China, Mainland"', 'China, Mainland'],
             'United Kingdom': 'United Kingdom',
             'Belgium': 'Belgium',
-            'Cayman Islands': 'Cayman Islands'
+            'Luxembourg': 'Luxembourg',
+            'France': 'France',
+            'Ireland': 'Ireland',
+            'Norway': 'Norway',
+            'Germany': 'Germany',
+            'Spain': 'Spain',
+            'Italy': 'Italy'
         }
         
-        # Find each year section by looking for "Country" keyword
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            
-            # Check if this line contains "Country" - marks start of a year section
-            if 'Country' in line and not line.strip().startswith('#'):
-                print(f"\nFound 'Country' at line {i}")
-                
-                # Extract years from this line or next few lines
-                years = []
-                for j in range(i, min(i+3, len(lines))):
-                    years_in_line = re.findall(r'\b(20\d{2}|19\d{2})\b', lines[j])
-                    if years_in_line:
-                        years = years_in_line
-                        print(f"Found years: {years}")
-                        break
-                
-                if not years:
-                    i += 1
-                    continue
-                
-                # Get the primary year for this section (usually first one)
-                primary_year = years[0]
-                
-                # The months are typically: Dec, Nov, Oct, Sep, Aug, Jul, Jun, May, Apr, Mar, Feb, Jan
-                # (in reverse chronological order)
-                months = ['Dec', 'Nov', 'Oct', 'Sep', 'Aug', 'Jul', 'Jun', 'May', 'Apr', 'Mar', 'Feb', 'Jan']
-                
-                # Now parse country data in this section (next ~40 lines typically)
-                section_end = min(i + 50, len(lines))
-                
-                for country_key, patterns in country_patterns.items():
-                    pattern_list = patterns if isinstance(patterns, list) else [patterns]
-                    
-                    # Search for this country in the current section
-                    for j in range(i+1, section_end):
-                        data_line = lines[j]
-                        
-                        # Check if this line is for our country
-                        if any(p in data_line for p in pattern_list):
-                            print(f"Found {country_key} at line {j}")
-                            
-                            # Extract all numeric values (holdings in billions)
-                            numbers = re.findall(r'\d+\.\d+', data_line)
-                            values = [float(n) for n in numbers if float(n) > 40]
-                            
-                            print(f"  Extracted {len(values)} values: {values[:3]}...")
-                            
-                            # Match values to months (should be 12 values for 12 months)
-                            for k in range(min(len(values), len(months))):
-                                all_data[country_key].append({
-                                    'date': f"{months[k]} {primary_year}",
-                                    'holdings': values[k]
-                                })
-                            break
-                
-                # Move to next potential section
-                i += 40
-            else:
-                i += 1
+        try:
+            print(f"\nFetching foreign holders data from {historical_url}")
+            response = requests.get(historical_url, timeout=30)
+            response.raise_for_status()
+            parsed_hist = parse_tic_text(response.text, country_patterns)
+            for country_key in hist_data.keys():
+                hist_data[country_key].extend(parsed_hist.get(country_key, []))
+        except Exception as e:
+            print(f"Error fetching from {historical_url}: {e}")
+
+        try:
+            print(f"\nFetching foreign holders data from {recent_url}")
+            response = requests.get(recent_url, timeout=30)
+            response.raise_for_status()
+            parsed_recent = parse_slt3_holdings_text(response.text, list(recent_data.keys()))
+            for country_key in recent_data.keys():
+                recent_data[country_key].extend(parsed_recent.get(country_key, []))
+        except Exception as e:
+            print(f"Error fetching from {recent_url}: {e}")
         
-        # Remove duplicates and sort chronologically
-        result = {}
-        for country, data_list in all_data.items():
-            # Remove duplicates by date (keep first occurrence)
+        euro_components = ['Belgium', 'Luxembourg', 'France', 'Ireland', 'Norway', 'Germany', 'Spain', 'Italy']
+
+        def normalize_data(data_list):
             seen = {}
             for item in data_list:
                 if item['date'] not in seen:
-                    seen[item['date']] = item
-            
-            # Sort chronologically
-            sorted_data = sorted(seen.values(), key=lambda x: datetime.strptime(x['date'], '%b %Y'))
-            
+                    seen[item['date']] = item['holdings']
+            return seen
+
+        merged_country_maps = {}
+        for country in hist_data.keys():
+            hist_map = normalize_data(hist_data.get(country, []))
+            rec_map = normalize_data(recent_data.get(country, []))
+            merged_country_maps[country] = merge_historical_recent_maps(hist_map, rec_map, override_last_months=12)
+
+        component_maps = [merged_country_maps.get(component, {}) for component in euro_components]
+        all_dates = sorted(set().union(*(set(m.keys()) for m in component_maps))) if component_maps else []
+
+        euro_zone_map = {}
+        for date in all_dates:
+            available_values = [m[date] for m in component_maps if date in m]
+            if available_values:
+                euro_zone_map[date] = sum(available_values)
+
+        result = {}
+        for country in ['Japan', 'China', 'United Kingdom']:
+            country_map = merged_country_maps.get(country, {})
+            sorted_data = sorted(
+                [{'date': d, 'holdings': v} for d, v in country_map.items()],
+                key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d')
+            )
             result[country] = sorted_data
-            
-            if sorted_data:
-                print(f"{country}: {len(sorted_data)} data points, from {sorted_data[0]['date']} to {sorted_data[-1]['date']}")
+
+        euro_sorted = sorted(
+            [{'date': d, 'holdings': v} for d, v in euro_zone_map.items()],
+            key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d')
+        )
+        result['Euro Zone'] = euro_sorted
+
+        for country, data_list in result.items():
+            if data_list:
+                print(f"{country}: {len(data_list)} data points, from {data_list[0]['date']} to {data_list[-1]['date']}")
             else:
                 print(f"{country}: No data")
         
@@ -266,121 +453,133 @@ def get_foreign_holders():
 def get_foreign_holders_percentage():
     """Calculate foreign holdings as percentage of total US Treasury debt"""
     try:
-        # Fetch total US Treasury debt
-        treasury_url = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny'
-        treasury_params = {
-            'fields': 'record_date,tot_pub_debt_out_amt',
-            'filter': 'record_date:gte:2006-01-01',
-            'page[size]': 10000,
-            'sort': '-record_date'
-        }
-        
-        treasury_response = requests.get(treasury_url, params=treasury_params, timeout=30)
-        treasury_response.raise_for_status()
-        treasury_data = treasury_response.json()
+        # Fetch total US public debt from FRED (GFDEBTN, in millions of dollars)
+        end_date = datetime.utcnow().strftime('%Y-%m-%d')
+        fred_debt_data = fetch_fred_data('GFDEBTN', '2000-01-01', end_date, FRED_API_KEY)
         
         # Build dictionary of date -> total debt (in billions)
-        total_debt_by_date = {}
-        for item in treasury_data.get('data', []):
-            date_str = item['record_date']
-            debt_amt = float(item['tot_pub_debt_out_amt']) / 1_000_000_000  # Convert to billions
-            # Convert to "Mon YYYY" format
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            formatted_date = date_obj.strftime('%b %Y')
-            total_debt_by_date[formatted_date] = debt_amt
+        total_debt_by_date = {
+            date: value / 1000 for date, value in fred_debt_data
+        }
+
+        # Prepare sorted debt dates for forward-fill
+        debt_dates_sorted = sorted(total_debt_by_date.keys())
+
+        def get_debt_for_date(target_date):
+            # Return exact match if available
+            if target_date in total_debt_by_date:
+                return total_debt_by_date[target_date]
+            # Forward-fill from the most recent prior date
+            for date in reversed(debt_dates_sorted):
+                if date <= target_date:
+                    return total_debt_by_date[date]
+            return None
         
-        print(f"Loaded {len(total_debt_by_date)} total debt records")
+        print(f"Loaded {len(total_debt_by_date)} total debt records from FRED")
         
-        # Fetch foreign holders data (reuse logic from above)
-        url = 'https://ticdata.treasury.gov/Publish/mfhhis01.txt'
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
+        historical_url = 'https://ticdata.treasury.gov/Publish/mfhhis01.txt'
+        recent_url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.html'
         
-        text = response.text
-        lines = text.split('\n')
-        
-        # Storage for all data
-        all_data = {
+        # Storage for historical + recent data separately
+        hist_data = {
             'Japan': [],
             'China': [],
             'United Kingdom': [],
             'Belgium': [],
-            'Cayman Islands': []
+            'Luxembourg': [],
+            'France': [],
+            'Ireland': [],
+            'Norway': [],
+            'Germany': [],
+            'Spain': [],
+            'Italy': []
         }
+        recent_data = {k: [] for k in hist_data.keys()}
         
         country_patterns = {
             'Japan': 'Japan',
             'China': ['"China, Mainland"', 'China, Mainland'],
             'United Kingdom': 'United Kingdom',
             'Belgium': 'Belgium',
-            'Cayman Islands': 'Cayman Islands'
+            'Luxembourg': 'Luxembourg',
+            'France': 'France',
+            'Ireland': 'Ireland',
+            'Norway': 'Norway',
+            'Germany': 'Germany',
+            'Spain': 'Spain',
+            'Italy': 'Italy'
         }
         
-        # Parse foreign holders data
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            
-            if 'Country' in line and not line.strip().startswith('#'):
-                years = []
-                for j in range(i, min(i+3, len(lines))):
-                    years_in_line = re.findall(r'\b(20\d{2}|19\d{2})\b', lines[j])
-                    if years_in_line:
-                        years = years_in_line
-                        break
-                
-                if not years:
-                    i += 1
-                    continue
-                
-                primary_year = years[0]
-                months = ['Dec', 'Nov', 'Oct', 'Sep', 'Aug', 'Jul', 'Jun', 'May', 'Apr', 'Mar', 'Feb', 'Jan']
-                section_end = min(i + 50, len(lines))
-                
-                for country_key, patterns in country_patterns.items():
-                    pattern_list = patterns if isinstance(patterns, list) else [patterns]
-                    
-                    for j in range(i+1, section_end):
-                        data_line = lines[j]
-                        
-                        if any(p in data_line for p in pattern_list):
-                            numbers = re.findall(r'\d+\.\d+', data_line)
-                            values = [float(n) for n in numbers if float(n) > 40]
-                            
-                            for k in range(min(len(values), len(months))):
-                                all_data[country_key].append({
-                                    'date': f"{months[k]} {primary_year}",
-                                    'holdings': values[k]
-                                })
-                            break
-                
-                i += 40
-            else:
-                i += 1
+        try:
+            response = requests.get(historical_url, timeout=30)
+            response.raise_for_status()
+            parsed_hist = parse_tic_text(response.text, country_patterns)
+            for country_key in hist_data.keys():
+                hist_data[country_key].extend(parsed_hist.get(country_key, []))
+        except Exception as e:
+            print(f"Error fetching from {historical_url}: {e}")
+
+        try:
+            response = requests.get(recent_url, timeout=30)
+            response.raise_for_status()
+            parsed_recent = parse_slt3_holdings_text(response.text, list(recent_data.keys()))
+            for country_key in recent_data.keys():
+                recent_data[country_key].extend(parsed_recent.get(country_key, []))
+        except Exception as e:
+            print(f"Error fetching from {recent_url}: {e}")
         
-        # Calculate percentages
-        result = {}
-        for country, data_list in all_data.items():
-            # Remove duplicates
+        euro_components = ['Belgium', 'Luxembourg', 'France', 'Ireland', 'Norway', 'Germany', 'Spain', 'Italy']
+
+        def normalize_data(data_list):
             seen = {}
             for item in data_list:
                 if item['date'] not in seen:
-                    seen[item['date']] = item
-            
-            # Calculate percentage for each date
+                    seen[item['date']] = item['holdings']
+            return seen
+
+        merged_country_maps = {}
+        for country in hist_data.keys():
+            hist_map = normalize_data(hist_data.get(country, []))
+            rec_map = normalize_data(recent_data.get(country, []))
+            merged_country_maps[country] = merge_historical_recent_maps(hist_map, rec_map, override_last_months=12)
+
+        component_maps = [merged_country_maps.get(component, {}) for component in euro_components]
+        all_dates = sorted(set().union(*(set(m.keys()) for m in component_maps))) if component_maps else []
+
+        euro_zone_map = {}
+        for date in all_dates:
+            available_values = [m[date] for m in component_maps if date in m]
+            if available_values:
+                euro_zone_map[date] = sum(available_values)
+
+        result = {}
+        for country in ['Japan', 'China', 'United Kingdom']:
+            country_map = merged_country_maps.get(country, {})
             percentage_data = []
-            for date, item in seen.items():
-                if date in total_debt_by_date:
-                    percentage = (item['holdings'] / total_debt_by_date[date]) * 100
+            for date, value in country_map.items():
+                debt_value = get_debt_for_date(date)
+                if debt_value is not None:
+                    percentage = (value / debt_value) * 100
                     percentage_data.append({
                         'date': date,
                         'percentage': round(percentage, 2)
                     })
-            
-            # Sort chronologically
-            percentage_data.sort(key=lambda x: datetime.strptime(x['date'], '%b %Y'))
+            percentage_data.sort(key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d'))
             result[country] = percentage_data
-            
+
+        euro_percentage = []
+        for date, value in euro_zone_map.items():
+            debt_value = get_debt_for_date(date)
+            if debt_value is not None:
+                percentage = (value / debt_value) * 100
+                euro_percentage.append({
+                    'date': date,
+                    'percentage': round(percentage, 2)
+                })
+        euro_percentage.sort(key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d'))
+        result['Euro Zone'] = euro_percentage
+
+        for country, percentage_data in result.items():
             if percentage_data:
                 print(f"{country}: {len(percentage_data)} percentage points")
         
@@ -392,12 +591,604 @@ def get_foreign_holders_percentage():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/euro-zone-component-shares', methods=['GET'])
+def get_euro_zone_component_shares():
+    """Return Euro Zone component holdings as % share of total Euro Zone holdings."""
+    try:
+        historical_url = 'https://ticdata.treasury.gov/Publish/mfhhis01.txt'
+        recent_url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.html'
+
+        euro_components = ['Belgium', 'Luxembourg', 'France', 'Ireland', 'Norway', 'Germany', 'Spain', 'Italy']
+
+        hist_data = {country: [] for country in euro_components}
+        recent_data = {country: [] for country in euro_components}
+        country_patterns = {country: country for country in euro_components}
+
+        try:
+            response = requests.get(historical_url, timeout=30)
+            response.raise_for_status()
+            parsed_hist = parse_tic_text(response.text, country_patterns)
+            for country in euro_components:
+                hist_data[country].extend(parsed_hist.get(country, []))
+        except Exception as e:
+            print(f"Error fetching from {historical_url}: {e}")
+
+        try:
+            response = requests.get(recent_url, timeout=30)
+            response.raise_for_status()
+            parsed_recent = parse_slt3_holdings_text(response.text, euro_components)
+            for country in euro_components:
+                recent_data[country].extend(parsed_recent.get(country, []))
+        except Exception as e:
+            print(f"Error fetching from {recent_url}: {e}")
+
+        def normalize_data(data_list):
+            seen = {}
+            for item in data_list:
+                if item['date'] not in seen:
+                    seen[item['date']] = item['holdings']
+            return seen
+
+        component_maps = {}
+        for country in euro_components:
+            hist_map = normalize_data(hist_data[country])
+            rec_map = normalize_data(recent_data[country])
+            component_maps[country] = merge_historical_recent_maps(hist_map, rec_map, override_last_months=12)
+
+        # Use union of dates so series starts as early as possible.
+        # Countries appear later naturally when their data becomes available.
+        all_dates = sorted(set().union(*(set(m.keys()) for m in component_maps.values()))) if component_maps else []
+
+        result = {country: [] for country in euro_components}
+        for date in all_dates:
+            available = {c: component_maps[c][date] for c in euro_components if date in component_maps[c]}
+            total = sum(available.values())
+            if not total:
+                continue
+
+            for country, value in available.items():
+                share = (value / total) * 100.0
+                result[country].append({'date': date, 'percentage': round(share, 2)})
+
+        for country in euro_components:
+            result[country].sort(key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d'))
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"Error in euro-zone-component-shares endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/treasury-net-sales-japan', methods=['GET'])
+def get_treasury_net_sales_japan():
+    """Fetch Japan net U.S. sales and valuation change from TIC SLT Table 3"""
+    try:
+        url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.txt'
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        lines = response.text.split('\n')
+        data = []
+        pattern = re.compile(
+            r'^Japan\s+\d+\s+(\d{4}-\d{2})\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+        )
+
+        def to_float_or_none(value):
+            if value is None:
+                return None
+            v = str(value).strip().lower()
+            if v in {'n.a.', 'n.a', 'na', '.', '-'}:
+                return None
+            try:
+                return float(value)
+            except ValueError:
+                return None
+
+        for line in lines:
+            match = pattern.match(line.strip())
+            if not match:
+                continue
+
+            date = match.group(1)
+            # Columns: total holdings, total net, long-term holdings, long-term net, long-term valchg, short-term holdings, short-term net
+            long_term_holdings = to_float_or_none(match.group(4))
+            long_term_net = to_float_or_none(match.group(5))
+            long_term_valchg = to_float_or_none(match.group(6))
+
+            if long_term_holdings is None:
+                continue
+
+            data.append({
+                'date': date,
+                'holdings': long_term_holdings,
+                'net_sales': long_term_net,
+                'valuation_change': long_term_valchg
+            })
+
+        data.sort(key=lambda x: x['date'])
+
+        # Compute holdings using H_t = H_{t-1} + net_sales + valuation_change
+        prev_holdings = None
+        for item in data:
+            if prev_holdings is None or item['net_sales'] is None or item['valuation_change'] is None:
+                item['holdings_computed'] = None
+            else:
+                item['holdings_computed'] = prev_holdings + item['net_sales'] + item['valuation_change']
+            prev_holdings = item['holdings']
+
+        return jsonify(data)
+
+    except Exception as e:
+        print(f"Error in treasury-net-sales-japan endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/treasury-net-sales-china', methods=['GET'])
+def get_treasury_net_sales_china():
+    """Fetch China net U.S. sales and valuation change from TIC SLT Table 3"""
+    try:
+        url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.txt'
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        lines = response.text.split('\n')
+        data = []
+        pattern = re.compile(
+            r'^"?China, Mainland"?\s+\d+\s+(\d{4}-\d{2})\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+        )
+
+        for line in lines:
+            match = pattern.match(line.strip())
+            if not match:
+                continue
+
+            date = match.group(1)
+            long_term_holdings = to_float_or_none(match.group(4))
+            long_term_net = to_float_or_none(match.group(5))
+            long_term_valchg = to_float_or_none(match.group(6))
+
+            if long_term_holdings is None:
+                continue
+
+            data.append({
+                'date': date,
+                'holdings': long_term_holdings,
+                'net_sales': long_term_net,
+                'valuation_change': long_term_valchg
+            })
+
+        data.sort(key=lambda x: x['date'])
+
+        prev_holdings = None
+        for item in data:
+            if prev_holdings is None or item['net_sales'] is None or item['valuation_change'] is None:
+                item['holdings_computed'] = None
+            else:
+                item['holdings_computed'] = prev_holdings + item['net_sales'] + item['valuation_change']
+            prev_holdings = item['holdings']
+
+        return jsonify(data)
+
+    except Exception as e:
+        print(f"Error in treasury-net-sales-china endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/treasury-net-sales-uk', methods=['GET'])
+def get_treasury_net_sales_uk():
+    """Fetch UK net U.S. sales and valuation change from TIC SLT Table 3"""
+    try:
+        url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.txt'
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        lines = response.text.split('\n')
+        data = []
+        pattern = re.compile(
+            r'^United Kingdom\s+\d+\s+(\d{4}-\d{2})\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+        )
+
+        for line in lines:
+            match = pattern.match(line.strip())
+            if not match:
+                continue
+
+            date = match.group(1)
+            long_term_holdings = to_float_or_none(match.group(4))
+            long_term_net = to_float_or_none(match.group(5))
+            long_term_valchg = to_float_or_none(match.group(6))
+
+            if long_term_holdings is None:
+                continue
+
+            data.append({
+                'date': date,
+                'holdings': long_term_holdings,
+                'net_sales': long_term_net,
+                'valuation_change': long_term_valchg
+            })
+
+        data.sort(key=lambda x: x['date'])
+
+        prev_holdings = None
+        for item in data:
+            if prev_holdings is None or item['net_sales'] is None or item['valuation_change'] is None:
+                item['holdings_computed'] = None
+            else:
+                item['holdings_computed'] = prev_holdings + item['net_sales'] + item['valuation_change']
+            prev_holdings = item['holdings']
+
+        return jsonify(data)
+
+    except Exception as e:
+        print(f"Error in treasury-net-sales-uk endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/treasury-net-sales-euro-zone', methods=['GET'])
+def get_treasury_net_sales_euro_zone():
+    """Fetch Euro Zone net U.S. sales and valuation change from TIC SLT Table 3"""
+    try:
+        url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.txt'
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        lines = response.text.split('\n')
+        pattern = re.compile(
+            r'^(Belgium|Luxembourg|France|Ireland|Norway|Germany|Spain|Italy)\s+\d+\s+(\d{4}-\d{2})\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+        )
+
+        aggregated = {}
+
+        for line in lines:
+            match = pattern.match(line.strip())
+            if not match:
+                continue
+
+            date = match.group(2)
+            long_term_holdings = to_float_or_none(match.group(5))
+            long_term_net = to_float_or_none(match.group(6))
+            long_term_valchg = to_float_or_none(match.group(7))
+
+            if long_term_holdings is None:
+                continue
+
+            if date not in aggregated:
+                aggregated[date] = {
+                    'date': date,
+                    'holdings': 0.0,
+                    'net_sales': 0.0,
+                    'valuation_change': 0.0,
+                    '_net_count': 0,
+                    '_val_count': 0
+                }
+
+            aggregated[date]['holdings'] += long_term_holdings
+            if long_term_net is not None:
+                aggregated[date]['net_sales'] += long_term_net
+                aggregated[date]['_net_count'] += 1
+            if long_term_valchg is not None:
+                aggregated[date]['valuation_change'] += long_term_valchg
+                aggregated[date]['_val_count'] += 1
+
+        data = list(aggregated.values())
+        data.sort(key=lambda x: x['date'])
+
+        for item in data:
+            item['net_sales'] = item['net_sales'] if item['_net_count'] > 0 else None
+            item['valuation_change'] = item['valuation_change'] if item['_val_count'] > 0 else None
+            item.pop('_net_count', None)
+            item.pop('_val_count', None)
+
+        prev_holdings = None
+        for item in data:
+            if prev_holdings is None or item['net_sales'] is None or item['valuation_change'] is None:
+                item['holdings_computed'] = None
+            else:
+                item['holdings_computed'] = prev_holdings + item['net_sales'] + item['valuation_change']
+            prev_holdings = item['holdings']
+
+        return jsonify(data)
+
+    except Exception as e:
+        print(f"Error in treasury-net-sales-euro-zone endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/japan-estimated-decomposition', methods=['GET'])
+def get_japan_estimated_decomposition():
+    """
+    Estimate Japan valuation changes for periods without TIC flow decomposition,
+    calibrating sensitivity to yield changes on a training window and leaving
+    the most recent observed months as holdout for validation.
+    """
+    try:
+        holdout_months = int(request.args.get('holdout_months', 15))
+        holdout_months = max(1, holdout_months)
+        lambda_reg = float(request.args.get('lambda_reg', 0.25))
+        lambda_reg = max(0.0, lambda_reg)
+
+        # Fixed duration assumptions; weights are calibrated under constraints:
+        # w_i >= 0 and sum_i w_i = 1
+        durations = {
+            '2y': 1.9,
+            '10y': 8.5,
+            '20y': 15.0,
+            '30y': 19.0,
+        }
+        base_weights = np.array([0.55, 0.35, 0.05, 0.05], dtype=float)
+
+        def project_to_simplex(v):
+            """Project vector v onto simplex {w >= 0, sum(w)=1}."""
+            if np.all(v >= 0) and np.isclose(np.sum(v), 1.0):
+                return v
+            u = np.sort(v)[::-1]
+            cssv = np.cumsum(u)
+            rho = np.where(u * np.arange(1, len(u) + 1) > (cssv - 1))[0]
+            if len(rho) == 0:
+                return np.ones_like(v) / len(v)
+            rho = rho[-1]
+            theta = (cssv[rho] - 1.0) / (rho + 1)
+            w = np.maximum(v - theta, 0)
+            s = np.sum(w)
+            return (w / s) if s > 0 else (np.ones_like(v) / len(v))
+
+        # 1) Pull Japan holdings + observed decomposition from TIC SLT table 3
+        url = 'https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table3.txt'
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        pattern = re.compile(
+            r'^Japan\s+\d+\s+(\d{4}-\d{2})\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+        )
+
+        rows = []
+        for line in response.text.split('\n'):
+            m = pattern.match(line.strip())
+            if not m:
+                continue
+
+            date = m.group(1)
+            holdings = to_float_or_none(m.group(4))
+            net_sales = to_float_or_none(m.group(5))
+            valuation_change = to_float_or_none(m.group(6))
+            if holdings is None:
+                continue
+
+            rows.append({
+                'date': date,
+                'holdings': holdings,
+                'actual_net_sales': net_sales,
+                'actual_valuation_change': valuation_change,
+            })
+
+        rows.sort(key=lambda x: x['date'])
+        if not rows:
+            return jsonify([])
+
+        # 2) Pull Treasury yields from FRED and build monthly averages
+        start_date = f"{rows[0]['date']}-01"
+        end_date = datetime.utcnow().strftime('%Y-%m-%d')
+
+        y2 = monthly_average_from_daily(fetch_fred_data('DGS2', start_date, end_date, FRED_API_KEY))
+        y10 = monthly_average_from_daily(fetch_fred_data('DGS10', start_date, end_date, FRED_API_KEY))
+        y20 = monthly_average_from_daily(fetch_fred_data('DGS20', start_date, end_date, FRED_API_KEY))
+        y30 = monthly_average_from_daily(fetch_fred_data('DGS30', start_date, end_date, FRED_API_KEY))
+
+        # 3) Prepare full monthly feature table
+        result = []
+        prev_holdings = None
+        prev_month = None
+
+        for r in rows:
+            month = r['date']
+            holdings = r['holdings']
+            delta_holdings = None if prev_holdings is None else holdings - prev_holdings
+
+            dy2 = dy10 = dy20 = dy30 = None
+            if prev_month is not None:
+                needed = [month, prev_month]
+                have_all = all(m in y2 and m in y10 and m in y20 and m in y30 for m in needed)
+                if have_all:
+                    dy2 = (y2[month] - y2[prev_month]) / 100.0
+                    dy10 = (y10[month] - y10[prev_month]) / 100.0
+                    dy20 = (y20[month] - y20[prev_month]) / 100.0
+                    dy30 = (y30[month] - y30[prev_month]) / 100.0
+
+            result.append({
+                'date': month,
+                'holdings': holdings,
+                'delta_holdings': delta_holdings,
+                'dy2': dy2,
+                'dy10': dy10,
+                'dy20': dy20,
+                'dy30': dy30,
+                'actual_net_sales': r['actual_net_sales'],
+                'actual_valuation_change': r['actual_valuation_change'],
+            })
+
+            prev_holdings = holdings
+            prev_month = month
+
+        # 4) Build observed sample where actual decomposition exists
+        observed = []
+        for i, item in enumerate(result):
+            if i == 0:
+                continue
+            if item['actual_net_sales'] is None or item['actual_valuation_change'] is None:
+                continue
+            if any(item[k] is None for k in ['dy2', 'dy10', 'dy20', 'dy30']):
+                continue
+            lag_holdings = result[i - 1]['holdings']
+            if lag_holdings is None or lag_holdings == 0:
+                continue
+
+            # Target is valuation return scaled by prior holdings
+            y_val = item['actual_valuation_change'] / lag_holdings
+            x_val = [1.0, item['dy2'], item['dy10'], item['dy20'], item['dy30']]
+            observed.append((i, x_val, y_val))
+
+        if len(observed) < 8:
+            return jsonify({'error': 'Not enough observed months to calibrate model'}), 400
+
+        effective_holdout = min(holdout_months, max(1, len(observed) - 6))
+        split = len(observed) - effective_holdout
+        train_obs = observed[:split]
+        holdout_obs = observed[split:]
+
+        train_indices = {i for i, _, _ in train_obs}
+        train_months = {result[i]['date'] for i, _, _ in train_obs}
+        holdout_months_set = {result[i]['date'] for i, _, _ in holdout_obs}
+
+        # 5) Dynamic state-like model (online, constrained weights)
+        # w_t is updated only on training months using observed valuation,
+        # then frozen on holdout/inference months.
+        w = base_weights.copy()
+        lr = 0.6
+        inner_steps = 80
+        lambda_anchor = lambda_reg         # pull toward prior/base weights
+        lambda_smooth = 2.0 * lambda_reg   # smooth state transition
+
+        model_name = 'dynamic_constrained_weights_v1'
+
+        errors_train = []
+        errors_holdout = []
+        sign_hits_train = []
+        sign_hits_holdout = []
+
+        for i, item in enumerate(result):
+            est_valuation = None
+            implied_net_sales = None
+            weighted_return = None
+            z = None
+
+            if i > 0 and all(item[k] is not None for k in ['dy2', 'dy10', 'dy20', 'dy30']):
+                lag_holdings = result[i - 1]['holdings']
+                if lag_holdings is not None:
+                    z = np.array([
+                        -durations['2y'] * item['dy2'],
+                        -durations['10y'] * item['dy10'],
+                        -durations['20y'] * item['dy20'],
+                        -durations['30y'] * item['dy30'],
+                    ], dtype=float)
+
+                    # Update only on training months with observed valuation
+                    if i in train_indices and item['actual_valuation_change'] is not None and lag_holdings != 0:
+                        y_obs = item['actual_valuation_change'] / lag_holdings
+                        w_prev = w.copy()
+
+                        for _ in range(inner_steps):
+                            pred = float(z @ w)
+                            grad = (
+                                2.0 * (pred - y_obs) * z
+                                + 2.0 * lambda_anchor * (w - base_weights)
+                                + 2.0 * lambda_smooth * (w - w_prev)
+                            )
+                            w = project_to_simplex(w - lr * grad)
+
+                    weighted_return = float(z @ w)
+                    est_valuation = lag_holdings * weighted_return
+                    if item['delta_holdings'] is not None:
+                        implied_net_sales = item['delta_holdings'] - est_valuation
+
+            item['weighted_price_return_pct'] = None if weighted_return is None else weighted_return * 100.0
+            item['estimated_valuation_change'] = est_valuation
+            item['implied_net_sales'] = implied_net_sales
+
+            if item['date'] in train_months:
+                item['model_segment'] = 'train'
+            elif item['date'] in holdout_months_set:
+                item['model_segment'] = 'holdout'
+            else:
+                item['model_segment'] = 'inference'
+
+            if item['actual_valuation_change'] is not None and est_valuation is not None:
+                err = item['actual_valuation_change'] - est_valuation
+                item['valuation_error'] = err
+
+                if item['model_segment'] == 'train':
+                    errors_train.append(abs(err))
+                    sign_hits_train.append(int(np.sign(item['actual_valuation_change']) == np.sign(est_valuation)))
+                elif item['model_segment'] == 'holdout':
+                    errors_holdout.append(abs(err))
+                    sign_hits_holdout.append(int(np.sign(item['actual_valuation_change']) == np.sign(est_valuation)))
+            else:
+                item['valuation_error'] = None
+
+            # Expose current effective coefficients and state
+            b2 = -w[0] * durations['2y']
+            b10 = -w[1] * durations['10y']
+            b20 = -w[2] * durations['20y']
+            b30 = -w[3] * durations['30y']
+
+            item['calibrated_coefficients'] = {
+                'intercept': 0.0,
+                'beta_2y': float(b2),
+                'beta_10y': float(b10),
+                'beta_20y': float(b20),
+                'beta_30y': float(b30),
+                'holdout_months': effective_holdout,
+                'lambda_reg': lambda_reg,
+            }
+            item['calibrated_weights'] = {
+                'w_2y': float(w[0]),
+                'w_10y': float(w[1]),
+                'w_20y': float(w[2]),
+                'w_30y': float(w[3]),
+            }
+            item['duration_assumptions'] = durations
+            item['model_name'] = model_name
+
+        # Model quality summary (added to all rows for easy frontend use)
+        summary = {
+            'train_mae': (float(np.mean(errors_train)) if errors_train else None),
+            'holdout_mae': (float(np.mean(errors_holdout)) if errors_holdout else None),
+            'train_sign_hit_rate': (float(np.mean(sign_hits_train)) if sign_hits_train else None),
+            'holdout_sign_hit_rate': (float(np.mean(sign_hits_holdout)) if sign_hits_holdout else None),
+            'train_points': len(errors_train),
+            'holdout_points': len(errors_holdout),
+            'holdout_months': effective_holdout,
+            'lambda_reg': lambda_reg,
+            'model_name': model_name,
+        }
+        for item in result:
+            item['model_summary'] = summary
+
+        # Add YoY delta: H_t - H_{t-12}
+        for i, item in enumerate(result):
+            if i >= 12:
+                prior = result[i - 12]['holdings']
+                item['delta_holdings_yoy'] = item['holdings'] - prior if prior is not None else None
+            else:
+                item['delta_holdings_yoy'] = None
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"Error in japan-estimated-decomposition endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     import sys
     print("Starting API server on http://localhost:5001")
     print("Get your free FRED API key at: https://fred.stlouisfed.org/docs/api/api_key.html")
     print("Update the fred_api_key variable in this file with your key")
     
-    # Use debug=False when running in background to avoid terminal issues
+    # Keep debug logs in terminal, but disable reloader to avoid duplicate processes
+    # that can leave port 5001 occupied after interrupted runs.
     debug_mode = sys.stdin.isatty()
-    app.run(debug=debug_mode, port=5001, host='127.0.0.1')
+    app.run(debug=debug_mode, use_reloader=False, port=5001, host='127.0.0.1')
