@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US Credit Card Risk Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>US Credit Card Risk Dashboard</h1>
+            <p class="subtitle">Leverage, pricing pressure, and stress metrics for U.S. household revolving credit</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link active">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Chart 1 — Leverage</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Debt / GDP and Debt / Disposable Income (%)</h3>
+                <canvas id="ccLeverageChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 2 — Cost of Credit</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Credit Card APR, Fed Funds Rate, and Spread (APR − Fed Funds)</h3>
+                <canvas id="ccCostChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 3 — Stress: Delinquency and Charge-off</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Credit Card Delinquency and Net Charge-off Rates (%)</h3>
+                <canvas id="ccStressChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data source: FRED (Federal Reserve Economic Data)</p>
+            <div class="methodology-note">
+                <strong>How these measures are built:</strong>
+                <ul>
+                    <li><strong>Debt:</strong> revolving consumer credit (<code>REVOLSL</code>).</li>
+                    <li><strong>Leverage ratios:</strong> debt divided by GDP (<code>GDP</code>) and disposable income (<code>DPI</code>), shown in %.</li>
+                    <li><strong>Cost of credit:</strong> APR (<code>TERMCBCCALLNS</code>), Fed Funds (<code>FEDFUNDS</code>), and spread = APR − Fed Funds.</li>
+                    <li><strong>Stress:</strong> delinquency (<code>DRCCLACBS</code>) and net charge-off (<code>CORCCACBS</code>) rates.</li>
+                    <li><strong>Frequency alignment:</strong> lower-frequency series are forward-filled to compare on a common monthly timeline.</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="credit_card.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ECB SHSS — EGB flows by quarter</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <h1>ECB SHSS — EGB flows by quarter</h1>
+    <p class="subtitle">
+      Source: ECB SDMX REST (<code>sdw-wsrest.ecb.europa.eu</code>) · Dataset: <code>SHSS</code>
+    </p>
+
+    <section class="panel controls">
+      <button id="runBtn">Run discovery + fetch chart</button>
+      <label class="checkbox">
+        <input type="checkbox" id="discoveryOnly" />
+        Discovery only (no data query)
+      </label>
+    </section>
+
+    <section class="panel chart-panel">
+      <canvas id="flowsChart" aria-label="EGB flows by quarter" role="img"></canvas>
+    </section>
+
+    <section class="panel">
+      <h2>Console / diagnostics</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

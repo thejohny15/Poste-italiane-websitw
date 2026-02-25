@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Intensity Index</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Digital Intensity Index</h1>
+            <p id="digitalSubtitle" class="subtitle">Enterprises (10 to 249 persons employed) · Year 2025 · Eurostat</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link active">Digital Intensity Index</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Share of Companies by Size Class</h2>
+            <div class="chart-container" style="height: 980px;">
+                <h3 id="companySizeShareTitle" class="chart-title">Share of companies by size class (%, 2024: 10-49, 50-249, 250+)</h3>
+                <canvas id="companySizeShareChart"></canvas>
+            </div>
+            <div class="chart-container" style="height: 540px;">
+                <h3 id="sizeVsProductivityLevelTitle250" class="chart-title">Share of 250+ companies vs labour productivity level (2024)</h3>
+                <canvas id="sizeVsProductivityLevelScatterChart250"></canvas>
+            </div>
+            <div class="chart-container" style="height: 540px;">
+                <h3 id="sizeVsProductivityLevelTitle50to249" class="chart-title">Share of 50-249 companies vs labour productivity level (2024)</h3>
+                <canvas id="sizeVsProductivityLevelScatterChart50to249"></canvas>
+            </div>
+            <div class="chart-container" style="height: 540px;">
+                <h3 id="sizeVsProductivityLevelTitle10to49" class="chart-title">Share of 10-49 companies vs labour productivity level (2024)</h3>
+                <canvas id="sizeVsProductivityLevelScatterChart10to49"></canvas>
+            </div>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="diiGe250VeryHighVsProductivityTitle" class="chart-title">Very high digital intensity share (250+ employees) vs labour productivity (2025-Q3)</h3>
+                <canvas id="diiGe250VeryHighVsProductivityChart"></canvas>
+            </div>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="dii10to49VeryHighVsProductivityTitle" class="chart-title">Very high digital intensity share (10-49 employees) vs labour productivity (2025-Q3)</h3>
+                <canvas id="dii10to49VeryHighVsProductivityChart"></canvas>
+            </div>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="dii50to249VeryHighVsProductivityTitle" class="chart-title">Very high digital intensity share (50-249 employees) vs labour productivity (2025-Q3)</h3>
+                <canvas id="dii50to249VeryHighVsProductivityChart"></canvas>
+            </div>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="dii10to249VeryHighVsProductivityTitle" class="chart-title">Very high digital intensity share (10-249 employees) vs labour productivity (2025-Q3)</h3>
+                <canvas id="dii10to249VeryHighVsProductivityChart"></canvas>
+            </div>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="diiGE10VeryHighVsProductivityTitle" class="chart-title">Very high digital intensity share (10+ employees) vs labour productivity (2025-Q3)</h3>
+                <canvas id="diiGE10VeryHighVsProductivityChart"></canvas>
+            </div>
+            <div class="chart-container" style="height: 540px;">
+                <h3 id="sizeVsProductivityTitle250" class="chart-title">% change in 250+ companies vs % change in labour productivity (2021→2024)</h3>
+                <canvas id="sizeVsProductivityScatterChart250"></canvas>
+            </div>
+            <div class="chart-container" style="height: 540px;">
+                <h3 id="sizeVsProductivityTitle50to249" class="chart-title">% change in 50-249 companies vs % change in labour productivity (2021→2024)</h3>
+                <canvas id="sizeVsProductivityScatterChart50to249"></canvas>
+            </div>
+            <div class="chart-container" style="height: 540px;">
+                <h3 id="sizeVsProductivityTitle10to49" class="chart-title">% change in 10-49 companies vs % change in labour productivity (2021→2024)</h3>
+                <canvas id="sizeVsProductivityScatterChart10to49"></canvas>
+            </div>
+            <p class="subtitle" style="margin-top: -12px; margin-bottom: 20px; color: #6B7280;">Provisional</p>
+
+            <h2 class="section-title">Digital Intensity Distribution by Country</h2>
+            <div class="controls" style="margin-bottom: 16px;">
+                <a id="size10to49Link" href="digital_intensity_index.html?size_emp=10-49" class="nav-link">10-49 employees</a>
+                <a id="size50to249Link" href="digital_intensity_index.html?size_emp=50-249" class="nav-link">50-249 employees</a>
+                <a id="size10to249Link" href="digital_intensity_index.html?size_emp=10-249" class="nav-link active">10-249 employees</a>
+                <a id="sizeGE10Link" href="digital_intensity_index.html?size_emp=GE10" class="nav-link">10+ employees</a>
+                <a id="sizeGE250Link" href="digital_intensity_index.html?size_emp=GE250" class="nav-link">250+ employees</a>
+            </div>
+            <div class="chart-container" style="height: 980px;">
+                <h3 id="digitalChartTitle" class="chart-title">Share of enterprises by Digital Intensity level (%, 2025, enterprise size: 10-249 employees)</h3>
+                <canvas id="digitalIntensityChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Digital Intensity Trend (Selected Countries)</h2>
+            <div class="controls" style="margin-bottom: 16px;">
+                <a id="trendVeryHighLink" href="#" class="nav-link active">Very high</a>
+                <a id="trendHighLink" href="#" class="nav-link">High</a>
+                <a id="trendLowLink" href="#" class="nav-link">Low</a>
+                <a id="trendVeryLowLink" href="#" class="nav-link">Very low</a>
+            </div>
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="veryHighTrendTitle" class="chart-title">Digital intensity share (selected level, %, 2021-2025, enterprise size: 10-249 employees)</h3>
+                <canvas id="veryHighTrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="trendChangeTitle" class="chart-title">% change between available years (selected level, 2021-2025, enterprise size: 10-249 employees)</h3>
+                <canvas id="trendChangeChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="companySizeGrowthTitle" class="chart-title">Growth in number of companies by size class (2021–2024)</h3>
+                <canvas id="companySizeGrowthTrendChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data source: Eurostat dataset isoc_e_dii</p>
+            <div class="methodology-note">
+                <strong>Methodology:</strong>
+                <ul>
+                    <li><strong>Population:</strong> Enterprises with size class selected on this page (<code>size_emp=10-249</code> or <code>size_emp=GE250</code>).</li>
+                    <li><strong>Year:</strong> 2025 annual data.</li>
+                    <li><strong>Buckets:</strong> Very low, low, high, and very high digital intensity (DII Version 3).</li>
+                    <li><strong>Unit:</strong> Percentage of enterprises (<code>PC_ENT</code>).</li>
+                    <li><strong>Scope:</strong> All activities excluding agriculture, forestry, fishing, mining and quarrying, and without financial sector.</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="digital_intensity_index.js"></script>
+</body>
+</html>

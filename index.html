@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>US Treasury Debt Analysis</title>
+    <title>US Treasury Foreign Holders Dashboard</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -11,24 +11,28 @@
 <body>
     <div class="container">
         <header>
-            <h1>US Treasury Debt Issuance Tracker</h1>
-            <p class="subtitle">Real-time analysis of US Treasury debt from 2006-2026</p>
+            <h1>US Treasury Foreign Holders Dashboard</h1>
+            <p class="subtitle">Foreign holdings, shares, and decomposition for U.S. Treasury securities</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link active">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+            </div>
             <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
                 Checking server status...
             </div>
         </header>
 
         <main>
-            <div class="controls">
-                <label for="startDate">Start Date:</label>
-                <input type="date" id="startDate" value="2006-01-01">
-                
-                <label for="endDate">End Date:</label>
-                <input type="date" id="endDate" value="2026-01-31">
-                
-                <button onclick="fetchData()">Update Data</button>
-            </div>
-
             <h2 class="section-title">Major Foreign Holders of US Treasury Securities</h2>
 
             <div class="chart-container">
@@ -83,16 +87,26 @@
                 <canvas id="euroNetSalesChart"></canvas>
             </div>
 
-            <h2 class="section-title">Euro Zone Components Share of Euro Zone Holdings</h2>
+            <h2 class="section-title">Country Shares Within Euro Zone US Treasury Holdings</h2>
 
             <div class="chart-container">
-                <h3 class="chart-title">Belgium, Luxembourg, France, Ireland, Norway, Germany, Spain, Italy (% of Euro Zone holdings)</h3>
+                <h3 class="chart-title">Belgium, Luxembourg, France, Ireland, Norway, Germany, Spain, Italy (share of total Euro Zone holdings, %)</h3>
                 <canvas id="euroZoneComponentsShareChart"></canvas>
             </div>
         </main>
 
         <footer>
             <p>Data sources: US Treasury Fiscal Data API, FRED (Federal Reserve), Yahoo Finance</p>
+            <div class="methodology-note">
+                <strong>How to read these measures:</strong>
+                <ul>
+                    <li><strong>Holdings (Billions USD):</strong> TIC country holdings of U.S. Treasury securities, merged from historical and recent TIC releases.</li>
+                    <li><strong>% of Total Debt:</strong> country holdings divided by total U.S. federal debt from FRED (<code>GFDEBTN</code>), aligned by month.</li>
+                    <li><strong>Net Sales / Valuation charts:</strong> changes are decomposed into transaction flow and valuation effects using TIC SLT fields.</li>
+                    <li><strong>Country labels:</strong> TIC is residency-based (holders located in each jurisdiction), not strictly sovereign-only ownership.</li>
+                    <li><strong>Belgium and UK interpretation:</strong> Belgium often reflects custody through Euroclear; the UK often reflects London’s role as a global trading/custody hub. This helps explain spikes and drops in UK Treasury holdings and can inflate the amount of Treasuries recorded under Belgium versus ultimate beneficial ownership.</li>
+                </ul>
+            </div>
         </footer>
     </div>
 

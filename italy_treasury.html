@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foreign Holders of Italian Government Bonds</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Foreign Holders of Italian Government Bonds</h1>
+            <p class="subtitle">Top 5 foreign holders of Italian government bonds (CPIS)</p>
+            <p id="italySubtitleYear" class="subtitle" style="margin-top: 6px; font-size: 0.95rem;"></p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link active">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Chart 1 — Top 5 Foreign Holders (Levels)</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Holdings of Italian Government Debt Securities (Billions USD)</h3>
+                <canvas id="italyHoldingsChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 2 — Top 5 Shares</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Each Top Holder as % of Total Foreign Holdings in Italy</h3>
+                <canvas id="italyPercentageChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 3 — ECB SHSS Flows (Italy Issuer)</h2>
+            <div id="italyEcbStatus" style="margin-bottom: 10px; padding: 10px; border-radius: 6px; font-size: 14px; background: #E5E7EB; color: #111827;">
+                Loading ECB SHSS chart...
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">EGB Flows by Quarter (Holder-sector stack, issuer = IT, EUR billions)</h3>
+                <canvas id="italyEcbFlowsChart"></canvas>
+            </div>
+            <div class="methodology-note" style="margin-top: -8px; margin-bottom: 24px;">
+                <strong>ECB discovery log (Italy):</strong>
+                <pre id="italyEcbLog" style="margin-top: 8px; max-height: 220px; overflow: auto; background: #F8FAFC; padding: 10px; border-radius: 8px; border: 1px solid #E5E7EB; white-space: pre-wrap;"></pre>
+            </div>
+
+            <h2 class="section-title">Chart 4 — Productivity (TradingEconomics)</h2>
+            <div id="italyProductivityStatus" style="margin-bottom: 10px; padding: 10px; border-radius: 6px; font-size: 14px; background: #E5E7EB; color: #111827;">
+                Loading productivity data...
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Italy Productivity (TradingEconomics chart)</h3>
+                <img id="italyProductivityImage" alt="Italy productivity chart" style="width: 100%; height: auto; border-radius: 8px; display: none;" />
+            </div>
+            <div class="methodology-note" style="margin-top: -8px; margin-bottom: 24px;">
+                <strong>TradingEconomics summary:</strong>
+                <p id="italyProductivityText" style="margin-top: 8px;"></p>
+                <a id="italyProductivitySource" href="#" target="_blank" rel="noopener noreferrer" style="display: none;">Open source page</a>
+            </div>
+
+            <h2 class="section-title">Chart 5 — Top Tax Bracket (Personal Income Tax Rate)</h2>
+            <div id="italyTaxStatus" style="margin-bottom: 10px; padding: 10px; border-radius: 6px; font-size: 14px; background: #E5E7EB; color: #111827;">
+                Loading top tax bracket data...
+            </div>
+            <div class="methodology-note" style="margin-top: 0; margin-bottom: 10px;">
+                <strong id="italyTaxMetrics">Top bracket (current): N/A · Historical high: N/A · Historical low: N/A</strong>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Italy Top Personal Income Tax Rate (TradingEconomics chart)</h3>
+                <img id="italyTaxImage" alt="Italy top personal income tax rate chart" style="width: 100%; height: auto; border-radius: 8px; display: none;" />
+            </div>
+            <div class="methodology-note" style="margin-top: -8px; margin-bottom: 24px;">
+                <strong>TradingEconomics summary:</strong>
+                <p id="italyTaxText" style="margin-top: 8px;"></p>
+                <a id="italyTaxSource" href="#" target="_blank" rel="noopener noreferrer" style="display: none;">Open source page</a>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data sources: IMF CPIS (charts 1–2), ECB SHSS (chart 3)</p>
+            <div class="methodology-note">
+                <strong>How to read these measures:</strong>
+                <ul>
+                    <li><strong>Charts 1–2 concept:</strong> foreign holdings of <em>Italian government debt securities</em>.</li>
+                    <li><strong>Charts 1–2 series:</strong> CPIS annual assets in debt securities (<code>I_A_D_T_T_BP6_USD</code>), counterpart area <code>IT</code>, counterpart sector <code>GG</code>.</li>
+                    <li><strong>Top 5 logic:</strong> ranking is based on latest available year holdings, excluding Italy itself.</li>
+                    <li><strong>Chart 3 concept:</strong> ECB SHSS quarterly holder-sector flows for Italian government debt securities.</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="ecb_shss_client.js"></script>
+    <script src="productivity_client.js"></script>
+    <script src="tax_bracket_client.js"></script>
+    <script src="italy_treasury.js"></script>
+</body>
+</html>

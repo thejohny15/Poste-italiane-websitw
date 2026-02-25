@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US Household Equity Exposure Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>US Household Equity Exposure Dashboard</h1>
+            <p class="subtitle">Household equity concentration, market level, and labor stress</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link active">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Chart 1 — Household Equity Exposure</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Household Equity / Disposable Income, S&amp;P 500 (Normalized), Unemployment Rate</h3>
+                <canvas id="householdEquityChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 2 — Wealth Effect vs Consumption</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Growth in Household Equity, Real Disposable Income, Personal Consumption (YoY %), and Household Equity / Disposable Income</h3>
+                <canvas id="wealthEffectChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 3 — Equity Exposure vs Mortgage Stress</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Household Equity / Disposable Income, Mortgage Delinquency Rate, and Debt Service Ratio</h3>
+                <canvas id="equityStressChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data sources: FRED, Yahoo Finance</p>
+            <div class="methodology-note">
+                <strong>Series in this chart:</strong>
+                <ul>
+                    <li><strong>Household Equity / DPI:</strong> <code>W790RCQ027SBEA</code> (fallback <code>BOGZ1FL153064105Q</code>) divided by <code>DPI</code>, shown as %.</li>
+                    <li><strong>S&amp;P 500 (Normalized):</strong> monthly <code>^GSPC</code> rebased to 100 at the first observation.</li>
+                    <li><strong>Unemployment Rate:</strong> <code>UNRATE</code>, plotted on a secondary axis.</li>
+                    <li><strong>Wealth-effect chart:</strong> YoY growth for household equity, real disposable income (<code>DSPIC96</code>), and real personal consumption (<code>PCEC96</code>).</li>
+                    <li><strong>Mortgage stress chart:</strong> mortgage delinquency (<code>DRSFRMACBS</code>) and debt service ratio (<code>TDSP</code>) versus household equity exposure.</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="household_equity.js"></script>
+</body>
+</html>

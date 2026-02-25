@@ -26,7 +26,7 @@ price_column = 'Adj Close' if 'Adj Close' in tip.columns else 'Close'
 
 # Calculate monthly percentage change for TIP
 tip_monthly = tip[price_column].resample('MS').last()
-tip_pct_change = tip_monthly.pct_change() * 100  # Convert to percentage
+tip_pct_change = tip_monthly.pct_change() * 10  # Convert to percentage
 
 # Calculate monthly percentage change for CPI (inflation)
 cpi_monthly = cpi.resample('MS').last()

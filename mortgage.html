@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US Mortgage Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>US Mortgage Dashboard</h1>
+            <p class="subtitle">Mortgage rates and house price momentum on one timeline</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link active">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Chart 1 — Mortgage Rates vs House Prices</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">30Y Fixed, 15Y Fixed, 5/1 ARM, and House Price YoY (%)</h3>
+                <canvas id="mortgageMainChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 2 — Mortgage Burden and Distress</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">MDSP, Single-Family Mortgage Delinquency, TDSP, and Unemployment Rate (%)</h3>
+                <canvas id="mortgageStressChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Chart 3 — Rate vs Income and Home Price Growth</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">30Y Mortgage Rate, Median Household Income Growth, Home Price Growth, and Unemployment Rate (%)</h3>
+                <canvas id="mortgageAffordabilityChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data source: FRED (Federal Reserve Economic Data)</p>
+            <div class="methodology-note">
+                <strong>Series in this chart:</strong>
+                <ul>
+                    <li><strong>30Y Fixed:</strong> <code>MORTGAGE30US</code>.</li>
+                    <li><strong>15Y Fixed:</strong> <code>MORTGAGE15US</code>.</li>
+                    <li><strong>5/1 ARM:</strong> <code>MORTGAGE5US</code>.</li>
+                    <li><strong>House Price YoY:</strong> YoY % change from <code>CSUSHPINSA</code>.</li>
+                    <li><strong>Mortgage payment burden:</strong> <code>MDSP</code> (required mortgage payments as % of disposable personal income).</li>
+                    <li><strong>Mortgage distress:</strong> <code>DRSFRMACBS</code> (single-family mortgage delinquency rate at commercial banks).</li>
+                    <li><strong>Alternative broad pressure line:</strong> <code>TDSP</code> (total household debt service ratio).</li>
+                    <li><strong>Median household income growth:</strong> YoY-like growth from annual <code>MEHOINUSA646N</code> observations.</li>
+                    <li><strong>Labor market:</strong> <code>UNRATE</code> unemployment rate.</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="mortgage.js"></script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US Equity Holdings by Foreign Countries</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>US Equity Holdings by Foreign Countries</h1>
+            <p class="subtitle">TIC SLT Table 1 · U.S. corporate equity positions held by foreign residents</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link active">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Major Holders of US Corporate Equity</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Japan, China, United Kingdom, Euro Zone (Billions USD)</h3>
+                <canvas id="equityMajorChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Foreign Equity Holdings as Share of CRSP US Total Market Index</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Japan, China, United Kingdom, Euro Zone (% of CRSP US Total Market Index-based denominator)</h3>
+                <canvas id="equityPercentageChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Foreign Equity Holdings as Share of S&P 500 Market Capitalization</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Japan, China, United Kingdom, Euro Zone (% of S&P 500 market-cap proxy)</h3>
+                <canvas id="equitySP500PercentageChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Euro Zone Components Share of Euro Zone US Corporate Equity</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">Belgium, Luxembourg, France, Ireland, Norway, Germany, Spain, Italy (% share of Euro Zone U.S. corporate equity)</h3>
+                <canvas id="equityEuroComponentsChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data source: U.S. Treasury TIC SLT Table 1</p>
+            <div class="methodology-note">
+                <strong>How to read these measures:</strong>
+                <ul>
+                    <li><strong>US Equity Holdings (Billions USD):</strong> TIC <em>U.S. Corp. Equity</em> position (<code>for_lt_eqty_pos</code>) held by foreign residents.</li>
+                    <li><strong>% chart:</strong> each country (and Euro Zone aggregate) divided by a CRSP US Total Market Index-based denominator (index scaled to the latest total foreign equity level).</li>
+                    <li><strong>S&amp;P 500 % chart:</strong> each country (and Euro Zone aggregate) divided by an S&amp;P 500 market-cap proxy (latest total cap anchor scaled by monthly S&amp;P 500 index levels).</li>
+                    <li><strong>Euro component % chart:</strong> each Euro country shown as its share of total Euro Zone U.S. corporate equity for each month.</li>
+                    <li><strong>Coverage:</strong> this SLT equity series starts in 2020 in the current TIC release format.</li>
+                    <li><strong>Interpretation:</strong> country values are residency-based and may include custodial/intermediary locations.</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="equity.js"></script>
+</body>
+</html>

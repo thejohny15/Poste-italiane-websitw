@@ -19,11 +19,17 @@ function formatBillions(value) {
     return `$${(value / 1e9).toFixed(2)}B`;
 }
 
+function getSelectedDateRange() {
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    return {
+        startDate: (startInput && startInput.value) ? startInput.value : '2000-01-01',
+        endDate: (endInput && endInput.value) ? endInput.value : '2026-12-31'
+    };
+}
+
 // Fetch data from Treasury API
 async function fetchData() {
-    const startDate = document.getElementById('startDate').value;
-    const endDate = document.getElementById('endDate').value;
-    
     try {
         // Fetch and update foreign holders data
         await fetchForeignHoldersData();
@@ -68,14 +74,22 @@ function updateEuroZoneComponentSharesChart(data) {
         'Norway': '#D97706',
         'Germany': '#111827',
         'Spain': '#0891B2',
-        'Italy': '#BE123C'
+        'Italy': '#EC4899'
     };
+
+    const allDateStrings = Array.from(new Set(
+        countries.flatMap(country => (data[country] || []).map(item => item.date))
+    )).sort();
+
+    const labels = allDateStrings.map(dateStr => new Date(`${dateStr}T00:00:00`));
 
     const datasets = countries.map(country => {
         const series = data[country] || [];
+        const seriesMap = new Map(series.map(item => [item.date, item.percentage]));
+
         return {
             label: country,
-            data: series.map(item => ({ x: new Date(item.date), y: item.percentage })),
+            data: allDateStrings.map(dateStr => seriesMap.has(dateStr) ? seriesMap.get(dateStr) : null),
             borderColor: colors[country],
             backgroundColor: colors[country] + '22',
             borderWidth: 2,
@@ -92,7 +106,7 @@ function updateEuroZoneComponentSharesChart(data) {
 
     euroZoneComponentsShareChart = new Chart(ctx, {
         type: 'line',
-        data: { datasets },
+        data: { labels, datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -117,7 +131,7 @@ function updateEuroZoneComponentSharesChart(data) {
                 },
                 y: {
                     beginAtZero: true,
-                    max: 100,
+                    max: 60,
                     title: {
                         display: true,
                         text: 'Share of Euro Zone Holdings (%)'
@@ -135,6 +149,8 @@ function updateEuroZoneComponentSharesChart(data) {
                     position: 'top'
                 },
                 tooltip: {
+                    mode: 'index',
+                    intersect: false,
                     callbacks: {
                         label: function(context) {
                             const value = context.parsed.y;
@@ -301,8 +317,7 @@ function updateStats(data) {
 // Fetch economic indicators data
 async function fetchEconomicData() {
     try {
-        const startDate = document.getElementById('startDate').value;
-        const endDate = document.getElementById('endDate').value;
+        const { startDate, endDate } = getSelectedDateRange();
         
         // MUST use local API server - FRED and Yahoo Finance APIs don't allow direct browser access (CORS)
         const response = await fetch(`http://localhost:5001/api/economic-data?start_date=${startDate}&end_date=${endDate}`);
@@ -437,8 +452,7 @@ function updateEconomicChart(data) {
 // Fetch Major Foreign Holders data from Treasury
 async function fetchForeignHoldersData() {
     try {
-        const startDate = document.getElementById('startDate').value;
-        const endDate = document.getElementById('endDate').value;
+        const { startDate, endDate } = getSelectedDateRange();
         
         // Fetch from API which downloads and parses Treasury data
         const url = `http://localhost:5001/api/foreign-holders?start_date=${startDate}&end_date=${endDate}`;
@@ -670,7 +684,11 @@ function updateForeignHoldersChart(data) {
                     },
                     ticks: {
                         callback: function(value) {
-                            return '$' + value.toFixed(0) + 'B';
+                            const formatted = Number(value).toLocaleString('en-US', {
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0
+                            }).replace(/,/g, "'");
+                            return '$' + formatted + 'B';
                         }
                     }
                 },
