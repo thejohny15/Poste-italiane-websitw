@@ -27,6 +27,38 @@ DATA_CACHE: dict[str, Any] = {
     'us_equity_updated_at': None,
 }
 
+EUROZONE_MEMBER_CODES = {
+    'AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'EL', 'IE',
+    'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PT', 'SK', 'SI', 'ES'
+}
+EUROZONE_PLUS_POLAND_CODES = EUROZONE_MEMBER_CODES | {'PL'}
+EUROZONE_AGG_GEO = 'EZ_AGG'
+EUROZONE_AGG_LABEL = 'Eurozone (aggregate)'
+
+
+def append_unweighted_aggregate_row(rows, metric_keys, aggregate_geo_codes=None):
+    """Append an unweighted aggregate row (mean across available countries) for the given metrics."""
+    if not rows:
+        return
+
+    geo_codes = aggregate_geo_codes or EUROZONE_MEMBER_CODES
+    base_rows = [row for row in rows if row.get('geo') in geo_codes]
+    if not base_rows:
+        return
+
+    aggregate: dict[str, Any] = {
+        'geo': EUROZONE_AGG_GEO,
+        'country': EUROZONE_AGG_LABEL,
+    }
+
+    for key in metric_keys:
+        values = [row.get(key) for row in base_rows if row.get(key) is not None]
+        if not values:
+            return
+        aggregate[key] = sum(values) / len(values)
+
+    rows.append(aggregate)
+
 # FRED API - Register for free at https://fred.stlouisfed.org/docs/api/api_key.html
 # For now, using public data endpoints
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
@@ -1732,11 +1764,7 @@ def fetch_eurostat_digital_intensity_2025(size_emp='10-249'):
         'high': 'E_DI3_HI',
         'very_high': 'E_DI3_VHI',
     }
-    eu27_member_codes = {
-        'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL',
-        'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
-        'SI', 'ES', 'SE'
-    }
+    included_country_codes = EUROZONE_PLUS_POLAND_CODES
 
     rows_by_geo = {}
 
@@ -1775,10 +1803,10 @@ def fetch_eurostat_digital_intensity_2025(size_emp='10-249'):
         values = payload.get('value', {})
 
         for geo_code, geo_pos in geo_index.items():
-            # Keep EU-27 country rows only (exclude aggregates and non-EU countries)
+            # Keep Eurozone + Poland country rows only (exclude aggregates and others)
             if not re.match(r'^[A-Z]{2}$', str(geo_code)):
                 continue
-            if geo_code not in eu27_member_codes:
+            if geo_code not in included_country_codes:
                 continue
 
             value = values.get(str(geo_pos))
@@ -1802,6 +1830,8 @@ def fetch_eurostat_digital_intensity_2025(size_emp='10-249'):
         if any(row[k] is None for k in ['very_low', 'low', 'high', 'very_high']):
             continue
         rows.append(row)
+
+    append_unweighted_aggregate_row(rows, ['very_low', 'low', 'high', 'very_high'])
 
     rows.sort(key=lambda item: (item['high'] + item['very_high']), reverse=True)
     return {
@@ -1852,7 +1882,7 @@ def fetch_eurostat_digital_intensity_trend_2021_2025(size_emp='GE250', indic_is=
         raise ValueError(f"Unsupported indic_is '{indic_is}'. Allowed: {', '.join(allowed_indicators.keys())}")
 
     countries = {
-        'EU27_2020': 'European Union',
+        'EU27_2020': 'Eurozone',
         'BE': 'Belgium',
         'FR': 'France',
         'ES': 'Spain',
@@ -1948,6 +1978,1730 @@ def get_digital_intensity_very_high_trend():
         return jsonify({'error': str(e)}), 500
 
 
+def fetch_business_registration_bankruptcy_growth_trend(nace_r2='K-N', s_adj='SCA', start_time='2015-Q1', unit='PCH_PRE'):
+    """Fetch registration and bankruptcy trends (sts_rb_q) using Eurostat-provided percentage units."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sts_rb_q'
+
+    selected_countries = {
+        'EU27_2020': 'Eurozone',
+        'BE': 'Belgium',
+        'FR': 'France',
+        'ES': 'Spain',
+        'IT': 'Italy',
+        'DE': 'Germany',
+        'PL': 'Poland',
+    }
+
+    nace_aliases = {
+        'B-N_S95_X_K': 'B-S_X_O_S94',
+    }
+    nace_r2 = nace_aliases.get(nace_r2, nace_r2)
+
+    nace_labels = {
+        'K-N': 'Financial and insurance activities; real estate activities; professional, scientific and technical activities; administrative and support service activities',
+        'J': 'Information and communication',
+        'B-S_X_O_S94': 'Industry, construction and market services (except public administration and defence; compulsory social security; activities of membership organisations)',
+    }
+    allowed_nace = set(nace_labels.keys())
+    allowed_s_adj = {'SCA', 'NSA'}
+    allowed_units = {
+        'PCH_PRE': 'Percentage change on previous period',
+        'PCH_SM': 'Percentage change compared to same period in previous year',
+    }
+    if nace_r2 not in allowed_nace:
+        raise ValueError(f"Unsupported nace_r2 '{nace_r2}'. Allowed: {', '.join(sorted(allowed_nace))}")
+    if s_adj not in allowed_s_adj:
+        raise ValueError(f"Unsupported s_adj '{s_adj}'. Allowed: {', '.join(sorted(allowed_s_adj))}")
+    if unit not in allowed_units:
+        raise ValueError(f"Unsupported unit '{unit}'. Allowed: {', '.join(sorted(allowed_units.keys()))}")
+
+    def fetch_indicator(indic_bt):
+        params = {
+            'lang': 'en',
+            'freq': 'Q',
+            'indic_bt': indic_bt,
+            'nace_r2': nace_r2,
+            's_adj': s_adj,
+            'unit': unit,
+            'geo': list(selected_countries.keys()),
+        }
+
+        payload = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(base_url, params=params, timeout=40)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"sts_rb_q fetch failed (attempt {attempt}/3, indic_bt={indic_bt}): {e}")
+                if attempt < 3:
+                    time.sleep(1.2 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"sts_rb_q fetch failed for indic_bt={indic_bt}: {last_error}")
+
+        dimension = payload.get('dimension', {})
+        geo_idx = dimension.get('geo', {}).get('category', {}).get('index', {})
+        time_idx = dimension.get('time', {}).get('category', {}).get('index', {})
+        values = payload.get('value', {})
+
+        time_positions = sorted([(time_code, pos) for time_code, pos in time_idx.items()], key=lambda item: item[1])
+        geo_positions = sorted([(geo_code, pos) for geo_code, pos in geo_idx.items() if geo_code in selected_countries], key=lambda item: item[1])
+
+        num_time = len(time_positions)
+        raw_by_geo = {geo: [] for geo, _ in geo_positions}
+
+        for geo_code, geo_pos in geo_positions:
+            for time_code, time_pos in time_positions:
+                flat_index = geo_pos * num_time + time_pos
+                value = values.get(str(flat_index))
+                raw_by_geo[geo_code].append({'time': time_code, 'value': (float(value) if value is not None else None)})
+
+        def aggregate_quarterly_to_yearly(points):
+            yearly = {}
+            for point in points:
+                time_code = point.get('time')
+                value = point.get('value')
+                if time_code is None or value is None:
+                    continue
+                if time_code < start_time:
+                    continue
+                year = str(time_code).split('-')[0]
+                yearly.setdefault(year, []).append(float(value))
+
+            out = []
+            for year in sorted(yearly.keys()):
+                values = yearly[year]
+                if not values:
+                    out.append({'time': year, 'value': None})
+                else:
+                    out.append({'time': year, 'value': sum(values) / len(values)})
+            return out
+
+        series = []
+        for geo_code, _ in geo_positions:
+            series.append({
+                'geo': geo_code,
+                'country': selected_countries[geo_code],
+                'points': aggregate_quarterly_to_yearly(raw_by_geo[geo_code])
+            })
+
+        years = sorted({str(time_code).split('-')[0] for time_code, _ in time_positions if time_code >= start_time})
+        return series, years
+
+    registration_series, times = fetch_indicator('REG')
+    bankruptcy_series, _ = fetch_indicator('BKRT')
+
+    return {
+        'dataset': 'sts_rb_q',
+        'nace_r2': nace_r2,
+        'nace_label': nace_labels[nace_r2],
+        'seasonal_adjustment': s_adj,
+        'unit': unit,
+        'unit_label': allowed_units[unit],
+        'start_time': start_time,
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'times': times,
+        'registration_series': registration_series,
+        'bankruptcy_series': bankruptcy_series,
+    }
+
+
+@app.route('/api/business-registration-bankruptcy-growth-trend', methods=['GET'])
+def get_business_registration_bankruptcy_growth_trend():
+    """Return growth trends for registrations and bankruptcies for selected countries."""
+    try:
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        unit = (request.args.get('unit') or 'PCH_PRE').strip().upper()
+        payload = fetch_business_registration_bankruptcy_growth_trend(
+            nace_r2=nace_r2,
+            s_adj=s_adj,
+            start_time=start_time,
+            unit=unit,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in business-registration-bankruptcy-growth-trend endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def _linear_regression_stats(points):
+    n = len(points)
+    if n < 2:
+        return {'slope': None, 'intercept': None, 'r2': None, 'n': n}
+
+    x_vals = [float(p[0]) for p in points]
+    y_vals = [float(p[1]) for p in points]
+    x_mean = sum(x_vals) / n
+    y_mean = sum(y_vals) / n
+
+    ss_xx = sum((x - x_mean) ** 2 for x in x_vals)
+    if ss_xx == 0:
+        return {'slope': None, 'intercept': None, 'r2': None, 'n': n}
+
+    ss_xy = sum((x_vals[i] - x_mean) * (y_vals[i] - y_mean) for i in range(n))
+    slope = ss_xy / ss_xx
+    intercept = y_mean - slope * x_mean
+
+    y_hat = [intercept + slope * x for x in x_vals]
+    ss_res = sum((y_vals[i] - y_hat[i]) ** 2 for i in range(n))
+    ss_tot = sum((y - y_mean) ** 2 for y in y_vals)
+    r2 = (1.0 - (ss_res / ss_tot)) if ss_tot != 0 else None
+
+    return {
+        'slope': slope,
+        'intercept': intercept,
+        'r2': r2,
+        'n': n,
+    }
+
+
+def _fetch_productivity_bankruptcy_yearly_maps(start_time='2015-Q1', s_adj='SCA', bankruptcy_unit='PCH_PRE', indic_bt='BKRT', nace_r2='K-N'):
+    """Fetch and aggregate quarterly sts_rb_q indicator and productivity series to yearly averages."""
+    sts_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sts_rb_q'
+    namq_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/namq_10_lp_ulc'
+
+    geo_list = sorted(EUROZONE_MEMBER_CODES)
+
+    allowed_s_adj = {'SCA', 'NSA'}
+    allowed_bankruptcy_units = {
+        'PCH_PRE': 'Percentage change on previous period',
+        'PCH_SM': 'Percentage change compared to same period in previous year',
+    }
+    allowed_indicators = {'BKRT', 'REG'}
+    nace_aliases = {
+        'B-N_S95_X_K': 'B-S_X_O_S94',
+    }
+    nace_r2 = nace_aliases.get(nace_r2, nace_r2)
+
+    allowed_nace = {'K-N', 'J', 'B-S_X_O_S94'}
+    if s_adj not in allowed_s_adj:
+        raise ValueError(f"Unsupported s_adj '{s_adj}'. Allowed: {', '.join(sorted(allowed_s_adj))}")
+    if bankruptcy_unit not in allowed_bankruptcy_units:
+        raise ValueError(
+            f"Unsupported bankruptcy_unit '{bankruptcy_unit}'. Allowed: {', '.join(sorted(allowed_bankruptcy_units.keys()))}"
+        )
+    if indic_bt not in allowed_indicators:
+        raise ValueError(f"Unsupported indic_bt '{indic_bt}'. Allowed: {', '.join(sorted(allowed_indicators))}")
+    if nace_r2 not in allowed_nace:
+        raise ValueError(f"Unsupported nace_r2 '{nace_r2}'. Allowed: {', '.join(sorted(allowed_nace))}")
+
+    def fetch_json_with_retry(url, params, label):
+        payload = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(url, params=params, timeout=40)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"{label} fetch failed (attempt {attempt}/3): {e}")
+                if attempt < 3:
+                    time.sleep(1.2 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"{label} fetch failed: {last_error}")
+        return payload
+
+    def extract_geo_time_values(payload):
+        dimension = payload.get('dimension', {})
+        geo_category = dimension.get('geo', {}).get('category', {})
+        geo_idx = geo_category.get('index', {})
+        geo_labels = geo_category.get('label', {})
+        time_idx = dimension.get('time', {}).get('category', {}).get('index', {})
+        values = payload.get('value', {})
+
+        time_positions = sorted([(time_code, pos) for time_code, pos in time_idx.items()], key=lambda item: item[1])
+        geo_positions = sorted(
+            [(geo_code, pos) for geo_code, pos in geo_idx.items() if geo_code in EUROZONE_MEMBER_CODES],
+            key=lambda item: item[1]
+        )
+
+        num_time = len(time_positions)
+        by_geo = {geo: [] for geo, _ in geo_positions}
+        for geo_code, geo_pos in geo_positions:
+            for time_code, time_pos in time_positions:
+                flat_index = geo_pos * num_time + time_pos
+                value = values.get(str(flat_index))
+                by_geo[geo_code].append({'time': time_code, 'value': (float(value) if value is not None else None)})
+        labels = {
+            geo_code: str(geo_labels.get(geo_code, geo_code))
+            for geo_code, _ in geo_positions
+        }
+        return by_geo, labels
+
+    def aggregate_quarterly_to_yearly(by_geo):
+        yearly_by_geo = {}
+        for geo_code, points in by_geo.items():
+            yearly = {}
+            for point in points:
+                time_code = point.get('time')
+                value = point.get('value')
+                if time_code is None or value is None:
+                    continue
+                if time_code < start_time:
+                    continue
+                year = str(time_code).split('-')[0]
+                yearly.setdefault(year, []).append(float(value))
+
+            yearly_by_geo[geo_code] = {
+                year: (sum(vals) / len(vals))
+                for year, vals in yearly.items()
+                if vals
+            }
+        return yearly_by_geo
+
+    bankruptcy_payload = fetch_json_with_retry(
+        sts_url,
+        {
+            'lang': 'en',
+            'freq': 'Q',
+            'indic_bt': indic_bt,
+            'nace_r2': nace_r2,
+            's_adj': s_adj,
+            'unit': bankruptcy_unit,
+            'geo': geo_list,
+        },
+        f"sts_rb_q {indic_bt} ({bankruptcy_unit})"
+    )
+    bankruptcy_values_by_geo, bankruptcy_labels = extract_geo_time_values(bankruptcy_payload)
+    bankruptcy_yearly = aggregate_quarterly_to_yearly(bankruptcy_values_by_geo)
+
+    productivity_payload = fetch_json_with_retry(
+        namq_url,
+        {
+            'lang': 'en',
+            'freq': 'Q',
+            'unit': 'I20',
+            's_adj': s_adj,
+            'na_item': 'RLPR_HW',
+            'geo': geo_list,
+        },
+        'namq_10_lp_ulc RLPR_HW (I20)'
+    )
+    productivity_values_by_geo, productivity_labels = extract_geo_time_values(productivity_payload)
+    productivity_yearly = aggregate_quarterly_to_yearly(productivity_values_by_geo)
+
+    start_year = str(start_time).split('-')[0]
+    all_candidate_years = sorted({
+        year
+        for geo_code in geo_list
+        for year in bankruptcy_yearly.get(geo_code, {}).keys()
+        if year in productivity_yearly.get(geo_code, {}) and year >= start_year
+    })
+
+    eligible_geo = []
+    for geo_code in geo_list:
+        has_complete_coverage = all(
+            (bankruptcy_yearly.get(geo_code, {}).get(year) is not None)
+            and (productivity_yearly.get(geo_code, {}).get(year) is not None)
+            for year in all_candidate_years
+        )
+        starts_in_2015 = (
+            bankruptcy_yearly.get(geo_code, {}).get(start_year) is not None
+            and productivity_yearly.get(geo_code, {}).get(start_year) is not None
+        )
+        if has_complete_coverage and starts_in_2015:
+            eligible_geo.append(geo_code)
+
+    selected_countries = {
+        geo_code: str(
+            bankruptcy_labels.get(geo_code)
+            or productivity_labels.get(geo_code)
+            or geo_code
+        )
+        for geo_code in eligible_geo
+    }
+
+    overlap_years = sorted({
+        year
+        for geo_code in eligible_geo
+        for year in bankruptcy_yearly.get(geo_code, {}).keys()
+        if year in productivity_yearly.get(geo_code, {}) and year >= start_year
+    })
+
+    return {
+        'selected_countries': selected_countries,
+        'geo_list': eligible_geo,
+        'allowed_bankruptcy_units': allowed_bankruptcy_units,
+        'bankruptcy_yearly': bankruptcy_yearly,
+        'productivity_yearly': productivity_yearly,
+        'overlap_years': overlap_years,
+        'start_year': start_year,
+        'all_candidate_years': all_candidate_years,
+        'seasonal_adjustment': s_adj,
+        'start_time': start_time,
+        'bankruptcy_unit': bankruptcy_unit,
+        'nace_r2': nace_r2,
+    }
+
+
+def fetch_productivity_bankruptcy_r2_trend(start_time='2015-Q1', s_adj='SCA', bankruptcy_unit='PCH_PRE', nace_r2='K-N'):
+    """Compute yearly cross-country R² between bankruptcy growth and labour productivity."""
+    data = _fetch_productivity_bankruptcy_yearly_maps(
+        start_time=start_time,
+        s_adj=s_adj,
+        bankruptcy_unit=bankruptcy_unit,
+        indic_bt='BKRT',
+        nace_r2=nace_r2,
+    )
+
+    selected_countries = data['selected_countries']
+    geo_list = data['geo_list']
+    allowed_bankruptcy_units = data['allowed_bankruptcy_units']
+    bankruptcy_yearly = data['bankruptcy_yearly']
+    productivity_yearly = data['productivity_yearly']
+    years = data['overlap_years']
+    start_year = data['start_year']
+    all_candidate_years = data['all_candidate_years']
+    nace_r2_value = data['nace_r2']
+
+    points = []
+    for year in years:
+        regression_points = []
+        for geo_code in geo_list:
+            bankruptcy_value = bankruptcy_yearly.get(geo_code, {}).get(year)
+            productivity_value = productivity_yearly.get(geo_code, {}).get(year)
+            if bankruptcy_value is None or productivity_value is None:
+                continue
+            regression_points.append((bankruptcy_value, productivity_value))
+
+        stats = _linear_regression_stats(regression_points)
+        x_values = [float(point[0]) for point in regression_points]
+        y_values = [float(point[1]) for point in regression_points]
+        points.append({
+            'year': year,
+            'r2': stats['r2'],
+            'r2_pct': (stats['r2'] * 100.0) if stats['r2'] is not None else None,
+            'n': stats['n'],
+            'slope': stats['slope'],
+            'intercept': stats['intercept'],
+            'x_std': (float(np.std(x_values)) if x_values else None),
+            'y_std': (float(np.std(y_values)) if y_values else None),
+        })
+
+    return {
+        'x_metric': f"Bankruptcy growth ({allowed_bankruptcy_units[bankruptcy_unit]})",
+        'x_dataset': 'sts_rb_q',
+        'x_indicator': 'BKRT',
+        'x_unit': bankruptcy_unit,
+        'x_nace_r2': nace_r2_value,
+        'y_metric': 'Real labour productivity per hour worked (index)',
+        'y_dataset': 'namq_10_lp_ulc',
+        'y_unit': 'I20',
+        'y_na_item': 'RLPR_HW',
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'seasonal_adjustment': s_adj,
+        'start_time': start_time,
+        'start_year': start_year,
+        'eurozone_scope': 'Countries with complete annual coverage from start_year onward for both series',
+        'coverage_years': all_candidate_years,
+        'eligible_country_count': len(geo_list),
+        'countries': selected_countries,
+        'points': points,
+    }
+
+
+
+
+def fetch_productivity_bankruptcy_scatter_annual(year='2024', start_time='2015-Q1', s_adj='SCA', bankruptcy_unit='PCH_PRE', nace_r2='K-N'):
+    """Return cross-country scatter rows for a selected year: bankruptcy growth vs productivity level."""
+    data = _fetch_productivity_bankruptcy_yearly_maps(
+        start_time=start_time,
+        s_adj=s_adj,
+        bankruptcy_unit=bankruptcy_unit,
+        indic_bt='BKRT',
+        nace_r2=nace_r2,
+    )
+
+    selected_countries = data['selected_countries']
+    geo_list = data['geo_list']
+    allowed_bankruptcy_units = data['allowed_bankruptcy_units']
+    bankruptcy_yearly = data['bankruptcy_yearly']
+    productivity_yearly = data['productivity_yearly']
+    start_year = data['start_year']
+    all_candidate_years = data['all_candidate_years']
+    nace_r2_value = data['nace_r2']
+
+    year_str = str(year)
+    rows = []
+    for geo_code in geo_list:
+        x_value = bankruptcy_yearly.get(geo_code, {}).get(year_str)
+        y_value = productivity_yearly.get(geo_code, {}).get(year_str)
+        if x_value is None or y_value is None:
+            continue
+
+        rows.append({
+            'geo': geo_code,
+            'country': selected_countries.get(geo_code, geo_code),
+            'bankruptcy_growth_pct': float(x_value),
+            'real_labour_productivity_per_hour': float(y_value),
+        })
+
+    rows.sort(key=lambda item: item['country'])
+    regression_points = [(row['bankruptcy_growth_pct'], row['real_labour_productivity_per_hour']) for row in rows]
+    regression = _linear_regression_stats(regression_points)
+
+    return {
+        'x_metric': f"Bankruptcy growth ({allowed_bankruptcy_units[bankruptcy_unit]})",
+        'x_dataset': 'sts_rb_q',
+        'x_indicator': 'BKRT',
+        'x_unit': bankruptcy_unit,
+        'x_nace_r2': nace_r2_value,
+        'x_year': year_str,
+        'y_metric': 'Real labour productivity per hour worked (index)',
+        'y_dataset': 'namq_10_lp_ulc',
+        'y_unit': 'I20',
+        'y_na_item': 'RLPR_HW',
+        'y_year': year_str,
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'seasonal_adjustment': s_adj,
+        'start_time': start_time,
+        'start_year': start_year,
+        'eurozone_scope': 'Countries with complete annual coverage from start_year onward for both series',
+        'coverage_years': all_candidate_years,
+        'eligible_country_count': len(geo_list),
+        'countries': selected_countries,
+        'regression': regression,
+        'rows': rows,
+    }
+
+
+def fetch_productivity_registration_r2_trend(start_time='2015-Q1', s_adj='SCA', registration_unit='PCH_PRE', nace_r2='K-N'):
+    """Compute yearly cross-country R² between registration growth and labour productivity."""
+    data = _fetch_productivity_bankruptcy_yearly_maps(
+        start_time=start_time,
+        s_adj=s_adj,
+        bankruptcy_unit=registration_unit,
+        indic_bt='REG',
+        nace_r2=nace_r2,
+    )
+
+    selected_countries = data['selected_countries']
+    geo_list = data['geo_list']
+    allowed_units = data['allowed_bankruptcy_units']
+    registration_yearly = data['bankruptcy_yearly']
+    productivity_yearly = data['productivity_yearly']
+    years = data['overlap_years']
+    start_year = data['start_year']
+    all_candidate_years = data['all_candidate_years']
+    nace_r2_value = data['nace_r2']
+
+    points = []
+    for year in years:
+        regression_points = []
+        for geo_code in geo_list:
+            registration_value = registration_yearly.get(geo_code, {}).get(year)
+            productivity_value = productivity_yearly.get(geo_code, {}).get(year)
+            if registration_value is None or productivity_value is None:
+                continue
+            regression_points.append((registration_value, productivity_value))
+
+        stats = _linear_regression_stats(regression_points)
+        x_values = [float(point[0]) for point in regression_points]
+        y_values = [float(point[1]) for point in regression_points]
+        points.append({
+            'year': year,
+            'r2': stats['r2'],
+            'r2_pct': (stats['r2'] * 100.0) if stats['r2'] is not None else None,
+            'n': stats['n'],
+            'slope': stats['slope'],
+            'intercept': stats['intercept'],
+            'x_std': (float(np.std(x_values)) if x_values else None),
+            'y_std': (float(np.std(y_values)) if y_values else None),
+        })
+
+    return {
+        'x_metric': f"Business registration growth ({allowed_units[registration_unit]})",
+        'x_dataset': 'sts_rb_q',
+        'x_indicator': 'REG',
+        'x_unit': registration_unit,
+        'x_nace_r2': nace_r2_value,
+        'y_metric': 'Real labour productivity per hour worked (index)',
+        'y_dataset': 'namq_10_lp_ulc',
+        'y_unit': 'I20',
+        'y_na_item': 'RLPR_HW',
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'seasonal_adjustment': s_adj,
+        'start_time': start_time,
+        'start_year': start_year,
+        'eurozone_scope': 'Countries with complete annual coverage from start_year onward for both series',
+        'coverage_years': all_candidate_years,
+        'eligible_country_count': len(geo_list),
+        'countries': selected_countries,
+        'points': points,
+    }
+
+
+def fetch_productivity_registration_scatter_annual(year='2024', start_time='2015-Q1', s_adj='SCA', registration_unit='PCH_PRE', nace_r2='K-N'):
+    """Return cross-country scatter rows for a selected year: registration growth vs productivity level."""
+    data = _fetch_productivity_bankruptcy_yearly_maps(
+        start_time=start_time,
+        s_adj=s_adj,
+        bankruptcy_unit=registration_unit,
+        indic_bt='REG',
+        nace_r2=nace_r2,
+    )
+
+    selected_countries = data['selected_countries']
+    geo_list = data['geo_list']
+    allowed_units = data['allowed_bankruptcy_units']
+    registration_yearly = data['bankruptcy_yearly']
+    productivity_yearly = data['productivity_yearly']
+    start_year = data['start_year']
+    all_candidate_years = data['all_candidate_years']
+    nace_r2_value = data['nace_r2']
+
+    year_str = str(year)
+    rows = []
+    for geo_code in geo_list:
+        x_value = registration_yearly.get(geo_code, {}).get(year_str)
+        y_value = productivity_yearly.get(geo_code, {}).get(year_str)
+        if x_value is None or y_value is None:
+            continue
+
+        rows.append({
+            'geo': geo_code,
+            'country': selected_countries.get(geo_code, geo_code),
+            'registration_growth_pct': float(x_value),
+            'real_labour_productivity_per_hour': float(y_value),
+        })
+
+    rows.sort(key=lambda item: item['country'])
+    regression_points = [(row['registration_growth_pct'], row['real_labour_productivity_per_hour']) for row in rows]
+    regression = _linear_regression_stats(regression_points)
+
+    return {
+        'x_metric': f"Business registration growth ({allowed_units[registration_unit]})",
+        'x_dataset': 'sts_rb_q',
+        'x_indicator': 'REG',
+        'x_unit': registration_unit,
+        'x_nace_r2': nace_r2_value,
+        'x_year': year_str,
+        'y_metric': 'Real labour productivity per hour worked (index)',
+        'y_dataset': 'namq_10_lp_ulc',
+        'y_unit': 'I20',
+        'y_na_item': 'RLPR_HW',
+        'y_year': year_str,
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'seasonal_adjustment': s_adj,
+        'start_time': start_time,
+        'start_year': start_year,
+        'eurozone_scope': 'Countries with complete annual coverage from start_year onward for both series',
+        'coverage_years': all_candidate_years,
+        'eligible_country_count': len(geo_list),
+        'countries': selected_countries,
+        'regression': regression,
+        'rows': rows,
+    }
+
+
+def _fetch_net_business_dynamics_context(start_time='2015-Q1', s_adj='SCA', unit='PCH_PRE', nace_r2='K-N'):
+    """Build shared yearly context for net balance proxy: REG minus BKRT."""
+    reg_data = _fetch_productivity_bankruptcy_yearly_maps(
+        start_time=start_time,
+        s_adj=s_adj,
+        bankruptcy_unit=unit,
+        indic_bt='REG',
+        nace_r2=nace_r2,
+    )
+    bkrt_data = _fetch_productivity_bankruptcy_yearly_maps(
+        start_time=start_time,
+        s_adj=s_adj,
+        bankruptcy_unit=unit,
+        indic_bt='BKRT',
+        nace_r2=nace_r2,
+    )
+
+    reg_yearly = reg_data['bankruptcy_yearly']
+    bkrt_yearly = bkrt_data['bankruptcy_yearly']
+    productivity_yearly = reg_data['productivity_yearly']
+    start_year = reg_data['start_year']
+    nace_r2_value = reg_data['nace_r2']
+
+    candidate_geo = sorted(EUROZONE_MEMBER_CODES)
+    coverage_years = sorted({
+        year
+        for geo_code in candidate_geo
+        for year in reg_yearly.get(geo_code, {}).keys()
+        if (
+            year >= start_year
+            and year in bkrt_yearly.get(geo_code, {})
+            and year in productivity_yearly.get(geo_code, {})
+        )
+    })
+
+    eligible_geo = []
+    for geo_code in candidate_geo:
+        has_full_coverage = all(
+            reg_yearly.get(geo_code, {}).get(year) is not None
+            and bkrt_yearly.get(geo_code, {}).get(year) is not None
+            and productivity_yearly.get(geo_code, {}).get(year) is not None
+            for year in coverage_years
+        )
+        if has_full_coverage and coverage_years:
+            eligible_geo.append(geo_code)
+
+    country_labels = {
+        geo_code: (
+            reg_data['selected_countries'].get(geo_code)
+            or bkrt_data['selected_countries'].get(geo_code)
+            or geo_code
+        )
+        for geo_code in eligible_geo
+    }
+
+    net_balance_by_geo = {}
+    for geo_code in eligible_geo:
+        net_balance_by_geo[geo_code] = {}
+        for year in coverage_years:
+            reg_value = reg_yearly.get(geo_code, {}).get(year)
+            bkrt_value = bkrt_yearly.get(geo_code, {}).get(year)
+            if reg_value is None or bkrt_value is None:
+                continue
+            net_balance_by_geo[geo_code][year] = float(reg_value) - float(bkrt_value)
+
+    return {
+        'eligible_geo': eligible_geo,
+        'country_labels': country_labels,
+        'coverage_years': coverage_years,
+        'net_balance_by_geo': net_balance_by_geo,
+        'productivity_yearly': productivity_yearly,
+        'start_time': start_time,
+        'start_year': start_year,
+        'seasonal_adjustment': s_adj,
+        'unit': unit,
+        'unit_label': reg_data['allowed_bankruptcy_units'][unit],
+        'nace_r2': nace_r2_value,
+    }
+
+
+def fetch_net_business_dynamics_balance_trend(start_time='2015-Q1', s_adj='SCA', unit='PCH_PRE', nace_r2='K-N'):
+    """Return yearly net balance proxy (REG-BKRT) by country."""
+    context = _fetch_net_business_dynamics_context(
+        start_time=start_time,
+        s_adj=s_adj,
+        unit=unit,
+        nace_r2=nace_r2,
+    )
+
+    series = []
+    for geo_code in context['eligible_geo']:
+        points = [
+            {
+                'time': year,
+                'value': context['net_balance_by_geo'].get(geo_code, {}).get(year),
+            }
+            for year in context['coverage_years']
+        ]
+        series.append({
+            'geo': geo_code,
+            'country': context['country_labels'].get(geo_code, geo_code),
+            'points': points,
+        })
+
+    return {
+        'metric': 'Net business dynamics balance proxy (REG growth - BKRT growth)',
+        'dataset': 'sts_rb_q',
+        'nace_r2': context['nace_r2'],
+        'unit': context['unit'],
+        'unit_label': context['unit_label'],
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'seasonal_adjustment': context['seasonal_adjustment'],
+        'start_time': context['start_time'],
+        'start_year': context['start_year'],
+        'coverage_years': context['coverage_years'],
+        'eligible_country_count': len(context['eligible_geo']),
+        'countries': context['country_labels'],
+        'series': series,
+    }
+
+
+def fetch_productivity_net_business_dynamics_r2_trend(start_time='2015-Q1', s_adj='SCA', unit='PCH_PRE', nace_r2='K-N'):
+    """Return yearly R² of productivity vs net business dynamics balance proxy."""
+    context = _fetch_net_business_dynamics_context(
+        start_time=start_time,
+        s_adj=s_adj,
+        unit=unit,
+        nace_r2=nace_r2,
+    )
+
+    points = []
+    for year in context['coverage_years']:
+        regression_points = []
+        for geo_code in context['eligible_geo']:
+            x_value = context['net_balance_by_geo'].get(geo_code, {}).get(year)
+            y_value = context['productivity_yearly'].get(geo_code, {}).get(year)
+            if x_value is None or y_value is None:
+                continue
+            regression_points.append((x_value, y_value))
+
+        stats = _linear_regression_stats(regression_points)
+        x_values = [float(point[0]) for point in regression_points]
+        y_values = [float(point[1]) for point in regression_points]
+        points.append({
+            'year': year,
+            'r2': stats['r2'],
+            'r2_pct': (stats['r2'] * 100.0) if stats['r2'] is not None else None,
+            'n': stats['n'],
+            'slope': stats['slope'],
+            'intercept': stats['intercept'],
+            'x_std': (float(np.std(x_values)) if x_values else None),
+            'y_std': (float(np.std(y_values)) if y_values else None),
+        })
+
+    return {
+        'x_metric': 'Net business dynamics balance proxy (REG growth - BKRT growth)',
+        'x_dataset': 'sts_rb_q',
+        'x_indicator': 'REG_MINUS_BKRT',
+        'x_unit': context['unit'],
+        'x_nace_r2': context['nace_r2'],
+        'y_metric': 'Real labour productivity per hour worked (index)',
+        'y_dataset': 'namq_10_lp_ulc',
+        'y_unit': 'I20',
+        'y_na_item': 'RLPR_HW',
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'seasonal_adjustment': context['seasonal_adjustment'],
+        'start_time': context['start_time'],
+        'start_year': context['start_year'],
+        'eurozone_scope': 'Countries with complete annual coverage from start_year onward for REG, BKRT, and productivity',
+        'coverage_years': context['coverage_years'],
+        'eligible_country_count': len(context['eligible_geo']),
+        'countries': context['country_labels'],
+        'points': points,
+    }
+
+
+def fetch_productivity_net_business_dynamics_scatter_annual(year='2024', start_time='2015-Q1', s_adj='SCA', unit='PCH_PRE', nace_r2='K-N'):
+    """Return annual scatter of productivity vs net business dynamics balance proxy."""
+    context = _fetch_net_business_dynamics_context(
+        start_time=start_time,
+        s_adj=s_adj,
+        unit=unit,
+        nace_r2=nace_r2,
+    )
+
+    year_str = str(year)
+    rows = []
+    for geo_code in context['eligible_geo']:
+        x_value = context['net_balance_by_geo'].get(geo_code, {}).get(year_str)
+        y_value = context['productivity_yearly'].get(geo_code, {}).get(year_str)
+        if x_value is None or y_value is None:
+            continue
+
+        rows.append({
+            'geo': geo_code,
+            'country': context['country_labels'].get(geo_code, geo_code),
+            'net_business_dynamics_balance_pp': float(x_value),
+            'real_labour_productivity_per_hour': float(y_value),
+        })
+
+    rows.sort(key=lambda item: item['country'])
+    regression_points = [(row['net_business_dynamics_balance_pp'], row['real_labour_productivity_per_hour']) for row in rows]
+    regression = _linear_regression_stats(regression_points)
+
+    return {
+        'x_metric': 'Net business dynamics balance proxy (REG growth - BKRT growth)',
+        'x_dataset': 'sts_rb_q',
+        'x_indicator': 'REG_MINUS_BKRT',
+        'x_unit': context['unit'],
+        'x_nace_r2': context['nace_r2'],
+        'x_year': year_str,
+        'y_metric': 'Real labour productivity per hour worked (index)',
+        'y_dataset': 'namq_10_lp_ulc',
+        'y_unit': 'I20',
+        'y_na_item': 'RLPR_HW',
+        'y_year': year_str,
+        'frequency': 'A',
+        'aggregation_method': 'Annual average of quarterly values',
+        'seasonal_adjustment': context['seasonal_adjustment'],
+        'start_time': context['start_time'],
+        'start_year': context['start_year'],
+        'eurozone_scope': 'Countries with complete annual coverage from start_year onward for REG, BKRT, and productivity',
+        'coverage_years': context['coverage_years'],
+        'eligible_country_count': len(context['eligible_geo']),
+        'countries': context['country_labels'],
+        'regression': regression,
+        'rows': rows,
+    }
+
+
+@app.route('/api/productivity-bankruptcy-r2-trend', methods=['GET'])
+def get_productivity_bankruptcy_r2_trend():
+    """Return yearly R² trend between bankruptcy growth and productivity across selected countries."""
+    try:
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        bankruptcy_unit = (request.args.get('bankruptcy_unit') or 'PCH_PRE').strip().upper()
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+
+        payload = fetch_productivity_bankruptcy_r2_trend(
+            start_time=start_time,
+            s_adj=s_adj,
+            bankruptcy_unit=bankruptcy_unit,
+            nace_r2=nace_r2,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in productivity-bankruptcy-r2-trend endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/productivity-bankruptcy-scatter-annual', methods=['GET'])
+def get_productivity_bankruptcy_scatter_annual():
+    """Return annual cross-country scatter of productivity vs bankruptcy growth for a selected year."""
+    try:
+        year = (request.args.get('year') or '2024').strip()
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        bankruptcy_unit = (request.args.get('bankruptcy_unit') or 'PCH_PRE').strip().upper()
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+
+        payload = fetch_productivity_bankruptcy_scatter_annual(
+            year=year,
+            start_time=start_time,
+            s_adj=s_adj,
+            bankruptcy_unit=bankruptcy_unit,
+            nace_r2=nace_r2,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in productivity-bankruptcy-scatter-annual endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/productivity-registration-r2-trend', methods=['GET'])
+def get_productivity_registration_r2_trend():
+    """Return yearly R² trend between registration growth and productivity across selected countries."""
+    try:
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        registration_unit = (request.args.get('registration_unit') or 'PCH_PRE').strip().upper()
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+
+        payload = fetch_productivity_registration_r2_trend(
+            start_time=start_time,
+            s_adj=s_adj,
+            registration_unit=registration_unit,
+            nace_r2=nace_r2,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in productivity-registration-r2-trend endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/productivity-registration-scatter-annual', methods=['GET'])
+def get_productivity_registration_scatter_annual():
+    """Return annual cross-country scatter of productivity vs registration growth for a selected year."""
+    try:
+        year = (request.args.get('year') or '2024').strip()
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        registration_unit = (request.args.get('registration_unit') or 'PCH_PRE').strip().upper()
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+
+        payload = fetch_productivity_registration_scatter_annual(
+            year=year,
+            start_time=start_time,
+            s_adj=s_adj,
+            registration_unit=registration_unit,
+            nace_r2=nace_r2,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in productivity-registration-scatter-annual endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/net-business-dynamics-balance-trend', methods=['GET'])
+def get_net_business_dynamics_balance_trend():
+    """Return yearly net business dynamics balance proxy trend (REG-BKRT)."""
+    try:
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        unit = (request.args.get('unit') or 'PCH_PRE').strip().upper()
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+
+        payload = fetch_net_business_dynamics_balance_trend(
+            start_time=start_time,
+            s_adj=s_adj,
+            unit=unit,
+            nace_r2=nace_r2,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in net-business-dynamics-balance-trend endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/productivity-net-business-dynamics-r2-trend', methods=['GET'])
+def get_productivity_net_business_dynamics_r2_trend():
+    """Return yearly R² trend between net business dynamics balance and productivity."""
+    try:
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        unit = (request.args.get('unit') or 'PCH_PRE').strip().upper()
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+
+        payload = fetch_productivity_net_business_dynamics_r2_trend(
+            start_time=start_time,
+            s_adj=s_adj,
+            unit=unit,
+            nace_r2=nace_r2,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in productivity-net-business-dynamics-r2-trend endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/productivity-net-business-dynamics-scatter-annual', methods=['GET'])
+def get_productivity_net_business_dynamics_scatter_annual():
+    """Return annual scatter between net business dynamics balance and productivity."""
+    try:
+        year = (request.args.get('year') or '2024').strip()
+        start_time = (request.args.get('start_time') or '2015-Q1').strip()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        unit = (request.args.get('unit') or 'PCH_PRE').strip().upper()
+        nace_r2 = (request.args.get('nace_r2') or 'K-N').strip()
+
+        payload = fetch_productivity_net_business_dynamics_scatter_annual(
+            year=year,
+            start_time=start_time,
+            s_adj=s_adj,
+            unit=unit,
+            nace_r2=nace_r2,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in productivity-net-business-dynamics-scatter-annual endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def _ai_flat_index(dim_order, dim_sizes, positions):
+    idx = 0
+    for dim in dim_order:
+        idx = idx * dim_sizes[dim] + positions[dim]
+    return idx
+
+
+def _fetch_isoc_eb_ai_snapshot(year='2025', size_emp='GE10', unit='PC_ENT'):
+    """Fetch AI utilization snapshot by AI type and country for a given year and size class."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/isoc_eb_ai'
+    params = {
+        'lang': 'en',
+        'freq': 'A',
+        'size_emp': size_emp,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'time': str(year),
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(base_url, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            print(f"isoc_eb_ai snapshot fetch failed (attempt {attempt}/3): {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(f"isoc_eb_ai snapshot fetch failed: {last_error}")
+
+    dim_order = payload.get('id', [])
+    dimension = payload.get('dimension', {})
+    values = payload.get('value', {})
+
+    def sorted_codes_for_dim(dim_name):
+        category = dimension.get(dim_name, {}).get('category', {})
+        idx_map = category.get('index', {})
+        labels = category.get('label', {})
+        codes = [code for code, _ in sorted(idx_map.items(), key=lambda item: item[1])]
+        return codes, idx_map, labels
+
+    dim_sizes = {}
+    dim_indices = {}
+    dim_labels = {}
+    for dim_name in dim_order:
+        codes, idx_map, labels = sorted_codes_for_dim(dim_name)
+        dim_sizes[dim_name] = len(codes)
+        dim_indices[dim_name] = idx_map
+        dim_labels[dim_name] = labels
+
+    indic_codes = [
+        code for code in sorted(dim_indices.get('indic_is', {}).keys(), key=lambda c: dim_indices['indic_is'][c])
+        if str(code).startswith('E_AI_T')
+    ]
+    geo_codes = [
+        code for code in sorted(dim_indices.get('geo', {}).keys(), key=lambda c: dim_indices['geo'][c])
+        if code not in {'EA'}
+    ]
+
+    fixed_positions = {}
+    for dim_name in dim_order:
+        if dim_name in {'indic_is', 'geo'}:
+            continue
+        idx_map = dim_indices.get(dim_name, {})
+        if not idx_map:
+            continue
+        fixed_positions[dim_name] = next(iter(idx_map.values()))
+
+    rows = []
+    for geo in geo_codes:
+        entry = {
+            'geo': geo,
+            'country': str(dim_labels.get('geo', {}).get(geo, geo)),
+            'values': {},
+        }
+
+        for indic in indic_codes:
+            pos = dict(fixed_positions)
+            pos['geo'] = dim_indices['geo'][geo]
+            pos['indic_is'] = dim_indices['indic_is'][indic]
+            flat_idx = _ai_flat_index(dim_order, dim_sizes, pos)
+            value = values.get(str(flat_idx))
+            entry['values'][indic] = (float(value) if value is not None else None)
+
+        rows.append(entry)
+
+    rows.sort(key=lambda row: row['country'])
+
+    return {
+        'dataset': 'isoc_eb_ai',
+        'year': str(year),
+        'size_emp': size_emp,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'indicators': [
+            {
+                'code': code,
+                'label': str(dim_labels.get('indic_is', {}).get(code, code)),
+            }
+            for code in indic_codes
+        ],
+        'rows': rows,
+    }
+
+
+def _fetch_isoc_eb_ai_type_trend(size_emp='GE10', geo='EU27_2020', indic_is='E_AI_TANY', unit='PC_ENT'):
+    """Fetch AI utilization trend for a selected country and AI type."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/isoc_eb_ai'
+    params = {
+        'lang': 'en',
+        'freq': 'A',
+        'size_emp': size_emp,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'geo': geo,
+        'indic_is': indic_is,
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(base_url, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            print(f"isoc_eb_ai trend fetch failed (attempt {attempt}/3): {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(f"isoc_eb_ai trend fetch failed: {last_error}")
+
+    dim_order = payload.get('id', [])
+    dimension = payload.get('dimension', {})
+    values = payload.get('value', {})
+
+    dim_sizes = {}
+    dim_indices = {}
+    dim_labels = {}
+    for dim_name in dim_order:
+        category = dimension.get(dim_name, {}).get('category', {})
+        idx_map = category.get('index', {})
+        labels = category.get('label', {})
+        dim_sizes[dim_name] = len(idx_map)
+        dim_indices[dim_name] = idx_map
+        dim_labels[dim_name] = labels
+
+    time_codes = [
+        code for code in sorted(dim_indices.get('time', {}).keys(), key=lambda c: dim_indices['time'][c])
+    ]
+
+    fixed_positions = {}
+    for dim_name in dim_order:
+        idx_map = dim_indices.get(dim_name, {})
+        if not idx_map:
+            continue
+        fixed_positions[dim_name] = next(iter(idx_map.values()))
+
+    points = []
+    for time_code in time_codes:
+        pos = dict(fixed_positions)
+        pos['time'] = dim_indices['time'][time_code]
+        flat_idx = _ai_flat_index(dim_order, dim_sizes, pos)
+        value = values.get(str(flat_idx))
+        points.append({
+            'year': str(time_code),
+            'value': (float(value) if value is not None else None),
+        })
+
+    geo_label = str(dim_labels.get('geo', {}).get(geo, geo))
+    indic_label = str(dim_labels.get('indic_is', {}).get(indic_is, indic_is))
+
+    return {
+        'dataset': 'isoc_eb_ai',
+        'size_emp': size_emp,
+        'geo': geo,
+        'geo_label': geo_label,
+        'indic_is': indic_is,
+        'indic_label': indic_label,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'points': points,
+    }
+
+
+@app.route('/api/ai-utilization-types', methods=['GET'])
+def get_ai_utilization_types():
+    """Return AI utilization by type for all countries for selected year/size."""
+    try:
+        year = (request.args.get('year') or '2025').strip()
+        size_emp = (request.args.get('size_emp') or 'GE10').strip()
+        unit = (request.args.get('unit') or 'PC_ENT').strip().upper()
+        payload = _fetch_isoc_eb_ai_snapshot(year=year, size_emp=size_emp, unit=unit)
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in ai-utilization-types endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai-utilization-type-trend', methods=['GET'])
+def get_ai_utilization_type_trend():
+    """Return AI utilization trend for selected country and AI type."""
+    try:
+        size_emp = (request.args.get('size_emp') or 'GE10').strip()
+        geo = (request.args.get('geo') or 'EU27_2020').strip()
+        indic_is = (request.args.get('indic_is') or 'E_AI_TANY').strip()
+        unit = (request.args.get('unit') or 'PC_ENT').strip().upper()
+        payload = _fetch_isoc_eb_ai_type_trend(size_emp=size_emp, geo=geo, indic_is=indic_is, unit=unit)
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in ai-utilization-type-trend endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def _fetch_ai_vs_productivity_scatter(year='2025', size_emp='GE10', indic_is='E_AI_TANY', unit='PC_ENT', s_adj='SCA'):
+    """Return cross-country scatter rows for AI utilization % vs productivity level."""
+    ai_payload = _fetch_isoc_eb_ai_snapshot(year=year, size_emp=size_emp, unit=unit)
+    rows = ai_payload.get('rows', [])
+
+    ai_by_geo = {}
+    for row in rows:
+        geo_code = row.get('geo')
+        if not geo_code:
+            continue
+        value = (row.get('values') or {}).get(indic_is)
+        if value is None:
+            continue
+        ai_by_geo[geo_code] = {
+            'country': row.get('country', geo_code),
+            'ai_value': float(value),
+        }
+
+    geo_codes = sorted(ai_by_geo.keys())
+    if not geo_codes:
+        return {
+            'dataset_x': 'isoc_eb_ai',
+            'dataset_y': 'namq_10_lp_ulc',
+            'year': str(year),
+            'size_emp': size_emp,
+            'indic_is': indic_is,
+            'unit': unit,
+            's_adj': s_adj,
+            'rows': [],
+            'regression': _linear_regression_stats([]),
+        }
+
+    namq_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/namq_10_lp_ulc'
+    quarters = ['Q1', 'Q2', 'Q3', 'Q4']
+    productivity_quarterly = {geo: [] for geo in geo_codes}
+
+    for quarter in quarters:
+        params = {
+            'lang': 'en',
+            'freq': 'Q',
+            'unit': 'I20',
+            's_adj': s_adj,
+            'na_item': 'RLPR_HW',
+            'time': f"{year}-{quarter}",
+            'geo': geo_codes,
+        }
+
+        payload = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(namq_url, params=params, timeout=45)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"namq AI scatter fetch failed (attempt {attempt}/3, quarter={quarter}): {e}")
+                if attempt < 3:
+                    time.sleep(1.2 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"namq AI scatter fetch failed for quarter={quarter}: {last_error}")
+
+        geo_category = payload.get('dimension', {}).get('geo', {}).get('category', {})
+        geo_index = geo_category.get('index', {})
+        values = payload.get('value', {})
+
+        for geo in geo_codes:
+            pos = geo_index.get(geo)
+            if pos is None:
+                continue
+            value = values.get(str(pos))
+            if value is None:
+                continue
+            productivity_quarterly[geo].append(float(value))
+
+    rows_out = []
+    for geo in geo_codes:
+        prod_values = productivity_quarterly.get(geo, [])
+        if not prod_values:
+            continue
+        prod_annual = sum(prod_values) / len(prod_values)
+        rows_out.append({
+            'geo': geo,
+            'country': ai_by_geo[geo]['country'],
+            'ai_utilization_pct': ai_by_geo[geo]['ai_value'],
+            'real_labour_productivity_per_hour': prod_annual,
+        })
+
+    rows_out.sort(key=lambda item: item['country'])
+    points = [(row['ai_utilization_pct'], row['real_labour_productivity_per_hour']) for row in rows_out]
+    regression = _linear_regression_stats(points)
+
+    indicator_label = indic_is
+    for indicator in (ai_payload.get('indicators') or []):
+        if indicator.get('code') == indic_is:
+            indicator_label = indicator.get('label') or indic_is
+            break
+
+    return {
+        'dataset_x': 'isoc_eb_ai',
+        'dataset_y': 'namq_10_lp_ulc',
+        'year': str(year),
+        'size_emp': size_emp,
+        'indic_is': indic_is,
+        'indic_label': indicator_label,
+        'unit': unit,
+        's_adj': s_adj,
+        'productivity_aggregation': 'Annual average of quarterly values',
+        'rows': rows_out,
+        'regression': regression,
+    }
+
+
+@app.route('/api/ai-utilization-vs-productivity-scatter', methods=['GET'])
+def get_ai_utilization_vs_productivity_scatter():
+    """Return cross-country scatter data: AI utilization percentage vs productivity level."""
+    try:
+        year = (request.args.get('year') or '2025').strip()
+        size_emp = (request.args.get('size_emp') or 'GE10').strip()
+        indic_is = (request.args.get('indic_is') or 'E_AI_TANY').strip()
+        unit = (request.args.get('unit') or 'PC_ENT').strip().upper()
+        s_adj = (request.args.get('s_adj') or 'SCA').strip().upper()
+        payload = _fetch_ai_vs_productivity_scatter(
+            year=year,
+            size_emp=size_emp,
+            indic_is=indic_is,
+            unit=unit,
+            s_adj=s_adj,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in ai-utilization-vs-productivity-scatter endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def _fetch_ai_utilization_growth_selected_countries(start_year='2021', end_year='2025', size_emp='GE10', unit='PC_ENT'):
+    """Return growth by AI type between two years for selected countries."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/isoc_eb_ai'
+    selected_countries = {
+        'EU27_2020': 'Eurozone',
+        'DE': 'Germany',
+        'IT': 'Italy',
+        'BE': 'Belgium',
+        'FR': 'France',
+        'ES': 'Spain',
+    }
+
+    params = {
+        'lang': 'en',
+        'freq': 'A',
+        'size_emp': size_emp,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'geo': list(selected_countries.keys()),
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(base_url, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            print(f"isoc_eb_ai growth fetch failed (attempt {attempt}/3): {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(f"isoc_eb_ai growth fetch failed: {last_error}")
+
+    dim_order = payload.get('id', [])
+    dimension = payload.get('dimension', {})
+    values = payload.get('value', {})
+
+    dim_sizes = {}
+    dim_indices = {}
+    dim_labels = {}
+    for dim_name in dim_order:
+        category = dimension.get(dim_name, {}).get('category', {})
+        idx_map = category.get('index', {})
+        labels = category.get('label', {})
+        dim_sizes[dim_name] = len(idx_map)
+        dim_indices[dim_name] = idx_map
+        dim_labels[dim_name] = labels
+
+    indic_codes = [
+        code for code in sorted(dim_indices.get('indic_is', {}).keys(), key=lambda c: dim_indices['indic_is'][c])
+        if str(code).startswith('E_AI_T')
+    ]
+    available_years = sorted(dim_indices.get('time', {}).keys(), key=lambda c: dim_indices['time'][c])
+    if not available_years:
+        return {
+            'dataset': 'isoc_eb_ai',
+            'size_emp': size_emp,
+            'nace_r2': 'C10-S951_X_K',
+            'unit': unit,
+            'start_year': start_year,
+            'end_year': end_year,
+            'rows': [],
+            'indicators': [],
+        }
+
+    chosen_start = str(start_year) if str(start_year) in dim_indices.get('time', {}) else available_years[0]
+    chosen_end = str(end_year) if str(end_year) in dim_indices.get('time', {}) else available_years[-1]
+
+    fixed_positions = {}
+    for dim_name in dim_order:
+        if dim_name in {'geo', 'indic_is', 'time'}:
+            continue
+        idx_map = dim_indices.get(dim_name, {})
+        if idx_map:
+            fixed_positions[dim_name] = next(iter(idx_map.values()))
+
+    rows = []
+    for geo_code, country in selected_countries.items():
+        if geo_code not in dim_indices.get('geo', {}):
+            continue
+
+        growth_by_indicator = {}
+        for indic in indic_codes:
+            if indic not in dim_indices.get('indic_is', {}):
+                growth_by_indicator[indic] = None
+                continue
+
+            pos_start = dict(fixed_positions)
+            pos_start['geo'] = dim_indices['geo'][geo_code]
+            pos_start['indic_is'] = dim_indices['indic_is'][indic]
+            pos_start['time'] = dim_indices['time'][chosen_start]
+            flat_start = _ai_flat_index(dim_order, dim_sizes, pos_start)
+            start_value = values.get(str(flat_start))
+
+            pos_end = dict(fixed_positions)
+            pos_end['geo'] = dim_indices['geo'][geo_code]
+            pos_end['indic_is'] = dim_indices['indic_is'][indic]
+            pos_end['time'] = dim_indices['time'][chosen_end]
+            flat_end = _ai_flat_index(dim_order, dim_sizes, pos_end)
+            end_value = values.get(str(flat_end))
+
+            if start_value is None or end_value is None:
+                growth_by_indicator[indic] = None
+                continue
+
+            start_float = float(start_value)
+            end_float = float(end_value)
+            if start_float == 0:
+                growth_by_indicator[indic] = None
+                continue
+
+            growth_by_indicator[indic] = ((end_float - start_float) / abs(start_float)) * 100.0
+
+        rows.append({
+            'geo': geo_code,
+            'country': country,
+            'growth_by_indicator': growth_by_indicator,
+        })
+
+    return {
+        'dataset': 'isoc_eb_ai',
+        'size_emp': size_emp,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'start_year': chosen_start,
+        'end_year': chosen_end,
+        'indicators': [
+            {
+                'code': code,
+                'label': str(dim_labels.get('indic_is', {}).get(code, code)),
+            }
+            for code in indic_codes
+        ],
+        'rows': rows,
+    }
+
+
+def _fetch_ai_utilization_growth_by_year_selected_countries(size_emp='GE10', indic_is='E_AI_TANY', unit='PC_ENT'):
+    """Return annual growth (% change vs previous available year) for selected countries and one AI type."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/isoc_eb_ai'
+    selected_countries = {
+        'EU27_2020': 'Eurozone',
+        'DE': 'Germany',
+        'IT': 'Italy',
+        'BE': 'Belgium',
+        'FR': 'France',
+        'ES': 'Spain',
+    }
+
+    params = {
+        'lang': 'en',
+        'freq': 'A',
+        'size_emp': size_emp,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'indic_is': indic_is,
+        'geo': list(selected_countries.keys()),
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(base_url, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            print(f"isoc_eb_ai growth-by-year fetch failed (attempt {attempt}/3): {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(f"isoc_eb_ai growth-by-year fetch failed: {last_error}")
+
+    dim_order = payload.get('id', [])
+    dimension = payload.get('dimension', {})
+    values = payload.get('value', {})
+
+    dim_sizes = {}
+    dim_indices = {}
+    dim_labels = {}
+    for dim_name in dim_order:
+        category = dimension.get(dim_name, {}).get('category', {})
+        idx_map = category.get('index', {})
+        labels = category.get('label', {})
+        dim_sizes[dim_name] = len(idx_map)
+        dim_indices[dim_name] = idx_map
+        dim_labels[dim_name] = labels
+
+    time_codes = sorted(dim_indices.get('time', {}).keys(), key=lambda c: dim_indices['time'][c])
+
+    fixed_positions = {}
+    for dim_name in dim_order:
+        if dim_name in {'geo', 'time'}:
+            continue
+        idx_map = dim_indices.get(dim_name, {})
+        if idx_map:
+            fixed_positions[dim_name] = next(iter(idx_map.values()))
+
+    raw_series = {}
+    for geo_code, country in selected_countries.items():
+        if geo_code not in dim_indices.get('geo', {}):
+            continue
+        points = []
+        for year in time_codes:
+            pos = dict(fixed_positions)
+            pos['geo'] = dim_indices['geo'][geo_code]
+            pos['time'] = dim_indices['time'][year]
+            flat_idx = _ai_flat_index(dim_order, dim_sizes, pos)
+            value = values.get(str(flat_idx))
+            points.append({'year': str(year), 'value': (float(value) if value is not None else None)})
+        raw_series[geo_code] = {
+            'geo': geo_code,
+            'country': country,
+            'points': points,
+        }
+
+    growth_years = [str(y) for y in time_codes[1:]]
+    growth_series = []
+    for geo_code in selected_countries.keys():
+        series = raw_series.get(geo_code)
+        if not series:
+            continue
+
+        points = series['points']
+        growth_points = []
+        for i in range(1, len(points)):
+            prev_point = points[i - 1]
+            curr_point = points[i]
+            prev_val = prev_point.get('value')
+            curr_val = curr_point.get('value')
+
+            growth_value = None
+            if prev_val is not None and curr_val is not None and prev_val != 0:
+                growth_value = ((curr_val - prev_val) / abs(prev_val)) * 100.0
+
+            growth_points.append({
+                'year': curr_point.get('year'),
+                'from_year': prev_point.get('year'),
+                'value': growth_value,
+            })
+
+        growth_series.append({
+            'geo': geo_code,
+            'country': series['country'],
+            'points': growth_points,
+        })
+
+    indic_label = str(dim_labels.get('indic_is', {}).get(indic_is, indic_is))
+
+    return {
+        'dataset': 'isoc_eb_ai',
+        'size_emp': size_emp,
+        'nace_r2': 'C10-S951_X_K',
+        'unit': unit,
+        'indic_is': indic_is,
+        'indic_label': indic_label,
+        'years': growth_years,
+        'series': growth_series,
+    }
+
+
+@app.route('/api/ai-utilization-growth-selected-countries', methods=['GET'])
+def get_ai_utilization_growth_selected_countries():
+    """Return AI utilization growth by type for selected countries."""
+    try:
+        start_year = (request.args.get('start_year') or '2021').strip()
+        end_year = (request.args.get('end_year') or '2025').strip()
+        size_emp = (request.args.get('size_emp') or 'GE10').strip()
+        unit = (request.args.get('unit') or 'PC_ENT').strip().upper()
+        payload = _fetch_ai_utilization_growth_selected_countries(
+            start_year=start_year,
+            end_year=end_year,
+            size_emp=size_emp,
+            unit=unit,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in ai-utilization-growth-selected-countries endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai-utilization-growth-by-year-selected-countries', methods=['GET'])
+def get_ai_utilization_growth_by_year_selected_countries():
+    """Return annual growth by country for a selected AI type."""
+    try:
+        size_emp = (request.args.get('size_emp') or 'GE10').strip()
+        indic_is = (request.args.get('indic_is') or 'E_AI_TANY').strip()
+        unit = (request.args.get('unit') or 'PC_ENT').strip().upper()
+        payload = _fetch_ai_utilization_growth_by_year_selected_countries(
+            size_emp=size_emp,
+            indic_is=indic_is,
+            unit=unit,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in ai-utilization-growth-by-year-selected-countries endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 def fetch_sbs_enterprise_counts_by_country(size_emp='10-249', year='2024'):
     """Fetch number of enterprises by country from SBS_SC_OVW for a selected size class."""
     base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sbs_sc_ovw'
@@ -1970,11 +3724,7 @@ def fetch_sbs_enterprise_counts_by_country(size_emp='10-249', year='2024'):
     if size_emp not in size_to_components:
         raise ValueError(f"Unsupported size_emp '{size_emp}'. Allowed: {', '.join(size_to_components.keys())}")
 
-    eu27_member_codes = {
-        'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL',
-        'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
-        'SI', 'ES', 'SE'
-    }
+    included_country_codes = EUROZONE_PLUS_POLAND_CODES
 
     counts_by_geo = {}
     for component_size in size_to_components[size_emp]:
@@ -2013,7 +3763,7 @@ def fetch_sbs_enterprise_counts_by_country(size_emp='10-249', year='2024'):
         for geo_code, geo_pos in geo_index.items():
             if not re.match(r'^[A-Z]{2}$', str(geo_code)):
                 continue
-            if geo_code not in eu27_member_codes:
+            if geo_code not in included_country_codes:
                 continue
 
             value = values.get(str(geo_pos))
@@ -2062,11 +3812,7 @@ def fetch_sbs_company_size_shares_by_country_2025(year='2025'):
     base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sbs_sc_ovw'
     component_sizes = ['10-19', '20-49', '50-249', 'GE250']
 
-    eu27_member_codes = {
-        'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL',
-        'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
-        'SI', 'ES', 'SE'
-    }
+    included_country_codes = EUROZONE_PLUS_POLAND_CODES
 
     counts_by_geo = {}
     for component_size in component_sizes:
@@ -2105,7 +3851,7 @@ def fetch_sbs_company_size_shares_by_country_2025(year='2025'):
         for geo_code, geo_pos in geo_index.items():
             if not re.match(r'^[A-Z]{2}$', str(geo_code)):
                 continue
-            if geo_code not in eu27_member_codes:
+            if geo_code not in included_country_codes:
                 continue
 
             value = values.get(str(geo_pos))
@@ -2132,6 +3878,9 @@ def fetch_sbs_company_size_shares_by_country_2025(year='2025'):
                 counts_by_geo[geo_code]['count_250_plus'] += float(value)
 
     rows = []
+    total_10_49 = 0.0
+    total_50_249 = 0.0
+    total_250_plus = 0.0
     for row in counts_by_geo.values():
         count_10_49 = row['count_10_19'] + row['count_20_49']
         count_50_249 = row['count_50_249']
@@ -2151,6 +3900,25 @@ def fetch_sbs_company_size_shares_by_country_2025(year='2025'):
             'share_50_249': (count_50_249 / total) * 100,
             'share_250_plus': (count_250_plus / total) * 100,
             'total_count': total,
+        })
+
+        if row['geo'] in EUROZONE_MEMBER_CODES:
+            total_10_49 += count_10_49
+            total_50_249 += count_50_249
+            total_250_plus += count_250_plus
+
+    aggregate_total = total_10_49 + total_50_249 + total_250_plus
+    if aggregate_total > 0:
+        rows.append({
+            'geo': EUROZONE_AGG_GEO,
+            'country': EUROZONE_AGG_LABEL,
+            'count_10_49': total_10_49,
+            'count_50_249': total_50_249,
+            'count_250_plus': total_250_plus,
+            'share_10_49': (total_10_49 / aggregate_total) * 100,
+            'share_50_249': (total_50_249 / aggregate_total) * 100,
+            'share_250_plus': (total_250_plus / aggregate_total) * 100,
+            'total_count': aggregate_total,
         })
 
     rows.sort(key=lambda item: item['share_250_plus'], reverse=True)
@@ -2185,7 +3953,7 @@ def fetch_sbs_company_size_growth_selected_countries(start_year='2021', end_year
     component_sizes = ['10-19', '20-49', '50-249', 'GE250']
 
     selected_countries = {
-        'EU27_2020': 'European Union',
+        'EU27_2020': 'Eurozone',
         'BE': 'Belgium',
         'FR': 'France',
         'ES': 'Spain',
@@ -2257,6 +4025,8 @@ def fetch_sbs_company_size_growth_selected_countries(start_year='2021', end_year
         series_10_49 = []
         series_50_249 = []
         series_250_plus = []
+        series_10_249 = []
+        series_ge10 = []
 
         for year in year_values:
             c10 = per_year[year].get('10_19')
@@ -2265,9 +4035,13 @@ def fetch_sbs_company_size_growth_selected_countries(start_year='2021', end_year
             c250 = per_year[year].get('250_plus')
 
             count_10_49 = (c10 if c10 is not None else 0.0) + (c20 if c20 is not None else 0.0)
+            count_10_249 = count_10_49 + (c50 if c50 is not None else 0.0)
+            count_ge10 = count_10_249 + (c250 if c250 is not None else 0.0)
             series_10_49.append({'year': year, 'count': (count_10_49 if (c10 is not None or c20 is not None) else None)})
             series_50_249.append({'year': year, 'count': c50})
             series_250_plus.append({'year': year, 'count': c250})
+            series_10_249.append({'year': year, 'count': (count_10_249 if (c10 is not None or c20 is not None or c50 is not None) else None)})
+            series_ge10.append({'year': year, 'count': (count_ge10 if (c10 is not None or c20 is not None or c50 is not None or c250 is not None) else None)})
 
         def growth_pct(series):
             available = [point for point in series if point['count'] is not None]
@@ -2282,6 +4056,8 @@ def fetch_sbs_company_size_growth_selected_countries(start_year='2021', end_year
         growth_10_49, from_10_49, to_10_49 = growth_pct(series_10_49)
         growth_50_249, from_50_249, to_50_249 = growth_pct(series_50_249)
         growth_250_plus, from_250_plus, to_250_plus = growth_pct(series_250_plus)
+        growth_10_249, from_10_249, to_10_249 = growth_pct(series_10_249)
+        growth_ge10, from_ge10, to_ge10 = growth_pct(series_ge10)
 
         rows.append({
             'geo': geo_code,
@@ -2289,9 +4065,13 @@ def fetch_sbs_company_size_growth_selected_countries(start_year='2021', end_year
             'growth_10_49': growth_10_49,
             'growth_50_249': growth_50_249,
             'growth_250_plus': growth_250_plus,
+            'growth_10_249': growth_10_249,
+            'growth_ge10': growth_ge10,
             'period_10_49': {'from_year': from_10_49, 'to_year': to_10_49},
             'period_50_249': {'from_year': from_50_249, 'to_year': to_50_249},
             'period_250_plus': {'from_year': from_250_plus, 'to_year': to_250_plus},
+            'period_10_249': {'from_year': from_10_249, 'to_year': to_10_249},
+            'period_ge10': {'from_year': from_ge10, 'to_year': to_ge10},
         })
 
     return {
@@ -2304,19 +4084,216 @@ def fetch_sbs_company_size_growth_selected_countries(start_year='2021', end_year
     }
 
 
+def fetch_company_growth_vs_digital_intensity_scatter_eurozone(start_year='2021', end_year='2023', size_emp='10-249', indic_is='E_DI3_VHI'):
+    """Return all-eurozone scatter rows: % change in company counts vs % change in digital intensity."""
+    start_year_i = int(start_year)
+    end_year_i = int(end_year)
+    if end_year_i <= start_year_i:
+        raise ValueError("end_year must be greater than start_year")
+
+    allowed_sizes = {
+        '10-49': '10-49 employees',
+        '50-249': '50-249 employees',
+        '10-249': '10-249 employees',
+        'GE10': '10 or more employees',
+        'GE250': '250 or more employees',
+    }
+    allowed_indicators = {
+        'E_DI3_VHI': 'Very high digital intensity share',
+        'E_DI3_HI': 'High digital intensity share',
+        'E_DI3_LO': 'Low digital intensity share',
+        'E_DI3_VLO': 'Very low digital intensity share',
+    }
+    if size_emp not in allowed_sizes:
+        raise ValueError(f"Unsupported size_emp '{size_emp}'. Allowed: {', '.join(allowed_sizes.keys())}")
+    if indic_is not in allowed_indicators:
+        raise ValueError(f"Unsupported indic_is '{indic_is}'. Allowed: {', '.join(allowed_indicators.keys())}")
+
+    geo_list = sorted(EUROZONE_MEMBER_CODES)
+    country_labels = {geo: geo for geo in geo_list}
+
+    dii_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/isoc_e_dii'
+    sbs_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sbs_sc_ovw'
+
+    size_components = {
+        '10-49': ['10-19', '20-49'],
+        '50-249': ['50-249'],
+        '10-249': ['10-19', '20-49', '50-249'],
+        'GE10': ['10-19', '20-49', '50-249', 'GE250'],
+        'GE250': ['GE250'],
+    }[size_emp]
+
+    def _fetch_with_retries(url, params, label):
+        payload = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(url, params=params, timeout=45)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"{label} fetch failed (attempt {attempt}/3): {e}")
+                if attempt < 3:
+                    time.sleep(1.2 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"{label} fetch failed: {last_error}")
+        return payload
+
+    def _read_simple_geo_values(payload):
+        dimension = payload.get('dimension', {})
+        geo_category = dimension.get('geo', {}).get('category', {})
+        geo_index = geo_category.get('index', {})
+        geo_labels = geo_category.get('label', {})
+        values = payload.get('value', {})
+
+        out = {}
+        for geo_code in geo_list:
+            pos = geo_index.get(geo_code)
+            if pos is None:
+                continue
+            value = values.get(str(pos))
+            out[geo_code] = (float(value) if value is not None else None)
+            if geo_code in geo_labels:
+                country_labels[geo_code] = str(geo_labels[geo_code])
+        return out
+
+    dii_start_payload = _fetch_with_retries(
+        dii_url,
+        {
+            'lang': 'en',
+            'freq': 'A',
+            'size_emp': size_emp,
+            'nace_r2': 'C10-S951_X_K',
+            'unit': 'PC_ENT',
+            'time': str(start_year_i),
+            'indic_is': indic_is,
+            'geo': geo_list,
+        },
+        f"isoc_e_dii ({start_year_i}, {size_emp}, {indic_is})"
+    )
+    dii_end_payload = _fetch_with_retries(
+        dii_url,
+        {
+            'lang': 'en',
+            'freq': 'A',
+            'size_emp': size_emp,
+            'nace_r2': 'C10-S951_X_K',
+            'unit': 'PC_ENT',
+            'time': str(end_year_i),
+            'indic_is': indic_is,
+            'geo': geo_list,
+        },
+        f"isoc_e_dii ({end_year_i}, {size_emp}, {indic_is})"
+    )
+
+    dii_start = _read_simple_geo_values(dii_start_payload)
+    dii_end = _read_simple_geo_values(dii_end_payload)
+
+    def _fetch_company_counts_for_year(year_value):
+        totals = {geo: {'count': 0.0, 'has_value': False} for geo in geo_list}
+
+        for component_size in size_components:
+            payload = _fetch_with_retries(
+                sbs_url,
+                {
+                    'lang': 'en',
+                    'freq': 'A',
+                    'indic_sbs': 'ENT_NR',
+                    'nace_r2': 'B-S_X_O_S94',
+                    'size_emp': component_size,
+                    'time': str(year_value),
+                    'geo': geo_list,
+                },
+                f"sbs_sc_ovw ({year_value}, {component_size})"
+            )
+
+            dimension = payload.get('dimension', {})
+            geo_category = dimension.get('geo', {}).get('category', {})
+            geo_index = geo_category.get('index', {})
+            geo_labels = geo_category.get('label', {})
+            values = payload.get('value', {})
+
+            for geo_code in geo_list:
+                pos = geo_index.get(geo_code)
+                if pos is None:
+                    continue
+                value = values.get(str(pos))
+                if value is None:
+                    continue
+                totals[geo_code]['count'] += float(value)
+                totals[geo_code]['has_value'] = True
+                if geo_code in geo_labels:
+                    country_labels[geo_code] = str(geo_labels[geo_code])
+
+        return {
+            geo_code: (entry['count'] if entry['has_value'] else None)
+            for geo_code, entry in totals.items()
+        }
+
+    company_start = _fetch_company_counts_for_year(start_year_i)
+    company_end = _fetch_company_counts_for_year(end_year_i)
+
+    rows = []
+    for geo_code in geo_list:
+        c_start = company_start.get(geo_code)
+        c_end = company_end.get(geo_code)
+        d_start = dii_start.get(geo_code)
+        d_end = dii_end.get(geo_code)
+
+        if c_start is None or c_end is None or d_start is None or d_end is None:
+            continue
+        if c_start == 0 or d_start == 0:
+            continue
+
+        company_growth_pct = ((float(c_end) - float(c_start)) / abs(float(c_start))) * 100.0
+        digital_intensity_change_pct = ((float(d_end) - float(d_start)) / abs(float(d_start))) * 100.0
+
+        rows.append({
+            'geo': geo_code,
+            'country': country_labels.get(geo_code, geo_code),
+            'company_growth_pct': company_growth_pct,
+            'digital_intensity_change_pct': digital_intensity_change_pct,
+            'company_count_start': float(c_start),
+            'company_count_end': float(c_end),
+            'digital_intensity_start_pct': float(d_start),
+            'digital_intensity_end_pct': float(d_end),
+        })
+
+    rows.sort(key=lambda item: item['country'])
+    regression_points = [(row['company_growth_pct'], row['digital_intensity_change_pct']) for row in rows]
+    regression = _linear_regression_stats(regression_points)
+
+    return {
+        'x_metric': 'Growth in number of companies (%)',
+        'x_dataset': 'sbs_sc_ovw',
+        'x_nace_r2': 'B-S_X_O_S94',
+        'x_size_emp': size_emp,
+        'x_size_label': allowed_sizes[size_emp],
+        'y_metric': f"{allowed_indicators[indic_is]} change (%)",
+        'y_dataset': 'isoc_e_dii',
+        'y_indicator': indic_is,
+        'y_indicator_label': allowed_indicators[indic_is],
+        'y_nace_r2': 'C10-S951_X_K',
+        'start_year': start_year_i,
+        'end_year': end_year_i,
+        'country_scope': 'Eurozone member countries',
+        'eligible_country_count': len(rows),
+        'regression': regression,
+        'rows': rows,
+    }
+
+
 def fetch_share_250_plus_vs_productivity_2024(start_year='2021', end_year='2024', quarter='Q4'):
     """Return scatter-ready rows of % change in company counts vs % change in productivity."""
     sbs_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/sbs_sc_ovw'
     namq_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/namq_10_lp_ulc'
 
     component_sizes = ['10-19', '20-49', '50-249', 'GE250']
-    eu27_member_codes = {
-        'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL',
-        'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
-        'SI', 'ES', 'SE'
-    }
-
-    geo_list = ['EU27_2020'] + sorted(eu27_member_codes)
+    included_country_codes = EUROZONE_PLUS_POLAND_CODES
+    geo_list = sorted(included_country_codes)
 
     def fetch_company_counts_for_year(year_value):
         counts_by_geo = {
@@ -2442,7 +4419,7 @@ def fetch_share_250_plus_vs_productivity_2024(start_year='2021', end_year='2024'
 
     rows = []
     for geo_code in geo_list:
-        if geo_code != 'EU27_2020' and geo_code not in eu27_member_codes:
+        if geo_code not in included_country_codes:
             continue
 
         start_counts = counts_start.get(geo_code)
@@ -2470,7 +4447,7 @@ def fetch_share_250_plus_vs_productivity_2024(start_year='2021', end_year='2024'
 
         country_name = end_counts.get('country', geo_code)
         if geo_code == 'EU27_2020':
-            country_name = 'European Union'
+            country_name = 'Eurozone'
 
         rows.append({
             'geo': geo_code,
@@ -2482,6 +4459,14 @@ def fetch_share_250_plus_vs_productivity_2024(start_year='2021', end_year='2024'
         })
 
     rows.sort(key=lambda item: item['country'])
+    regression_rows = [dict(row) for row in rows]
+
+    append_unweighted_aggregate_row(rows, [
+        'company_change_10_49_pct',
+        'company_change_50_249_pct',
+        'company_change_250_plus_pct',
+        'productivity_change_pct',
+    ])
 
     def linear_regression_stats(points):
         n = len(points)
@@ -2513,9 +4498,9 @@ def fetch_share_250_plus_vs_productivity_2024(start_year='2021', end_year='2024'
             'n': n,
         }
 
-    points_10_49 = [(row['company_change_10_49_pct'], row['productivity_change_pct']) for row in rows]
-    points_50_249 = [(row['company_change_50_249_pct'], row['productivity_change_pct']) for row in rows]
-    points_250_plus = [(row['company_change_250_plus_pct'], row['productivity_change_pct']) for row in rows]
+    points_10_49 = [(row['company_change_10_49_pct'], row['productivity_change_pct']) for row in regression_rows]
+    points_50_249 = [(row['company_change_50_249_pct'], row['productivity_change_pct']) for row in regression_rows]
+    points_250_plus = [(row['company_change_250_plus_pct'], row['productivity_change_pct']) for row in regression_rows]
 
     return {
         'x_metric': 'Percentage change in number of companies by size class (%)',
@@ -2541,13 +4526,8 @@ def fetch_company_size_levels_vs_productivity_2024(year='2024', quarter='Q4'):
     namq_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/namq_10_lp_ulc'
 
     component_sizes = ['10-19', '20-49', '50-249', 'GE250']
-    eu27_member_codes = {
-        'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL',
-        'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
-        'SI', 'ES', 'SE'
-    }
-
-    geo_list = ['EU27_2020'] + sorted(eu27_member_codes)
+    included_country_codes = EUROZONE_PLUS_POLAND_CODES
+    geo_list = sorted(included_country_codes)
 
     counts_by_geo = {
         geo: {
@@ -2658,7 +4638,7 @@ def fetch_company_size_levels_vs_productivity_2024(year='2024', quarter='Q4'):
 
     rows = []
     for geo_code in geo_list:
-        if geo_code != 'EU27_2020' and geo_code not in eu27_member_codes:
+        if geo_code not in included_country_codes:
             continue
 
         row = counts_by_geo.get(geo_code)
@@ -2676,7 +4656,7 @@ def fetch_company_size_levels_vs_productivity_2024(year='2024', quarter='Q4'):
 
         country_name = row.get('country', geo_code)
         if geo_code == 'EU27_2020':
-            country_name = 'European Union'
+            country_name = 'Eurozone'
 
         rows.append({
             'geo': geo_code,
@@ -2688,6 +4668,14 @@ def fetch_company_size_levels_vs_productivity_2024(year='2024', quarter='Q4'):
         })
 
     rows.sort(key=lambda item: item['country'])
+    regression_rows = [dict(row) for row in rows]
+
+    append_unweighted_aggregate_row(rows, [
+        'share_10_49',
+        'share_50_249',
+        'share_250_plus',
+        'real_labour_productivity_per_hour',
+    ])
 
     def linear_regression_stats(points):
         n = len(points)
@@ -2719,9 +4707,9 @@ def fetch_company_size_levels_vs_productivity_2024(year='2024', quarter='Q4'):
             'n': n,
         }
 
-    points_10_49 = [(row['share_10_49'], row['real_labour_productivity_per_hour']) for row in rows]
-    points_50_249 = [(row['share_50_249'], row['real_labour_productivity_per_hour']) for row in rows]
-    points_250_plus = [(row['share_250_plus'], row['real_labour_productivity_per_hour']) for row in rows]
+    points_10_49 = [(row['share_10_49'], row['real_labour_productivity_per_hour']) for row in regression_rows]
+    points_50_249 = [(row['share_50_249'], row['real_labour_productivity_per_hour']) for row in regression_rows]
+    points_250_plus = [(row['share_250_plus'], row['real_labour_productivity_per_hour']) for row in regression_rows]
 
     return {
         'x_metric': 'Share of companies by size class (%)',
@@ -2751,6 +4739,30 @@ def get_company_size_growth_selected_countries():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         print(f"Error in company-size-growth-selected-countries endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/company-growth-vs-digital-intensity-scatter-eurozone', methods=['GET'])
+def get_company_growth_vs_digital_intensity_scatter_eurozone():
+    """Return all-eurozone scatter payload for company growth vs digital intensity change."""
+    try:
+        start_year = (request.args.get('start_year') or '2021').strip()
+        end_year = (request.args.get('end_year') or '2023').strip()
+        size_emp = (request.args.get('size_emp') or '10-249').strip()
+        indic_is = (request.args.get('indic_is') or 'E_DI3_VHI').strip()
+        payload = fetch_company_growth_vs_digital_intensity_scatter_eurozone(
+            start_year=start_year,
+            end_year=end_year,
+            size_emp=size_emp,
+            indic_is=indic_is,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in company-growth-vs-digital-intensity-scatter-eurozone endpoint: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -2806,12 +4818,8 @@ def fetch_dii_size_very_high_vs_productivity(year='2025', quarter='Q3', size_emp
     if size_emp not in allowed_sizes:
         raise ValueError(f"Unsupported size_emp '{size_emp}'. Allowed: {', '.join(allowed_sizes.keys())}")
 
-    eu27_member_codes = {
-        'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL',
-        'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
-        'SI', 'ES', 'SE'
-    }
-    geo_list = ['EU27_2020'] + sorted(eu27_member_codes)
+    included_country_codes = EUROZONE_PLUS_POLAND_CODES
+    geo_list = sorted(included_country_codes)
 
     dii_params = {
         'lang': 'en',
@@ -2910,7 +4918,7 @@ def fetch_dii_size_very_high_vs_productivity(year='2025', quarter='Q3', size_emp
 
         country_name = country_by_geo.get(geo_code, geo_code)
         if geo_code == 'EU27_2020':
-            country_name = 'European Union'
+            country_name = 'Eurozone'
 
         rows.append({
             'geo': geo_code,
@@ -2920,12 +4928,18 @@ def fetch_dii_size_very_high_vs_productivity(year='2025', quarter='Q3', size_emp
         })
 
     rows.sort(key=lambda item: item['country'])
+    regression_rows = [dict(row) for row in rows]
 
-    n = len(rows)
+    append_unweighted_aggregate_row(rows, [
+        'dii_very_high_share',
+        'real_labour_productivity_per_hour',
+    ])
+
+    n = len(regression_rows)
     regression = {'slope': None, 'intercept': None, 'r2': None, 'n': n}
     if n >= 2:
-        x_vals = [float(item['dii_very_high_share']) for item in rows]
-        y_vals = [float(item['real_labour_productivity_per_hour']) for item in rows]
+        x_vals = [float(item['dii_very_high_share']) for item in regression_rows]
+        y_vals = [float(item['real_labour_productivity_per_hour']) for item in regression_rows]
         x_mean = sum(x_vals) / n
         y_mean = sum(y_vals) / n
         ss_xx = sum((x - x_mean) ** 2 for x in x_vals)

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Utilization Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Utilization Dashboard</h1>
+            <p id="aiSubtitle" class="subtitle">Enterprises using AI technologies · Eurostat isoc_eb_ai</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+                <a href="ai_utilization.html" class="nav-link active">AI Utilization</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Filters</h2>
+            <div class="controls" style="margin-bottom: 16px;">
+                <a id="size10to49Link" href="#" class="nav-link">10-49 employees</a>
+                <a id="size50to249Link" href="#" class="nav-link">50-249 employees</a>
+                <a id="size10to249Link" href="#" class="nav-link">10-249 employees</a>
+                <a id="sizeGE10Link" href="#" class="nav-link active">10+ employees</a>
+                <a id="sizeGE250Link" href="#" class="nav-link">250+ employees</a>
+            </div>
+
+            <div class="controls" style="margin-bottom: 18px;">
+                <a id="year2021Link" href="#" class="nav-link">2021</a>
+                <a id="year2023Link" href="#" class="nav-link">2023</a>
+                <a id="year2024Link" href="#" class="nav-link">2024</a>
+                <a id="year2025Link" href="#" class="nav-link active">2025</a>
+            </div>
+
+            <div class="controls" style="margin-bottom: 20px;">
+                <label for="geoSelect">Geography</label>
+                <select id="geoSelect" style="padding: 10px; border: 2px solid #E5E7EB; border-radius: 8px; min-width: 260px;"></select>
+                <label for="indicSelect">AI type</label>
+                <select id="indicSelect" style="padding: 10px; border: 2px solid #E5E7EB; border-radius: 8px; min-width: 320px;"></select>
+            </div>
+
+            <h2 class="section-title">AI Types by Geography</h2>
+            <div class="chart-container" style="height: 760px;">
+                <h3 id="aiTypeByGeoTitle" class="chart-title">AI utilization by type (selected geography)</h3>
+                <canvas id="aiTypeByGeoChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Country Comparison</h2>
+            <div class="chart-container" style="height: 760px;">
+                <h3 id="aiTypeCountryComparisonTitle" class="chart-title">Country comparison for selected AI type</h3>
+                <canvas id="aiTypeCountryComparisonChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Trend</h2>
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="aiTypeTrendTitle" class="chart-title">AI utilization trend for selected AI type and geography</h3>
+                <canvas id="aiTypeTrendChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Productivity Relation</h2>
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="aiProductivityScatterTitle" class="chart-title">AI utilization vs productivity (selected AI type)</h3>
+                <canvas id="aiProductivityScatterChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Growth by AI Type (Selected Countries)</h2>
+            <div class="chart-container" style="height: 820px;">
+                <h3 id="aiGrowthByTypeTitle" class="chart-title">Growth in AI utilization for selected AI type (Germany, Italy, Belgium, France, Spain, Eurozone)</h3>
+                <canvas id="aiGrowthByTypeChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data source: Eurostat dataset isoc_eb_ai</p>
+            <div class="methodology-note">
+                <strong>Methodology:</strong>
+                <ul>
+                    <li><strong>Dataset:</strong> Eurostat <code>isoc_eb_ai</code>.</li>
+                    <li><strong>Scope:</strong> Enterprises in NACE <code>C10-S951_X_K</code>.</li>
+                    <li><strong>Unit:</strong> <code>PC_ENT</code> (percentage of enterprises).</li>
+                    <li><strong>AI types:</strong> Indicators beginning with <code>E_AI_T*</code> (AI technology usage types and aggregate type indicators).</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="ai_utilization.js"></script>
+</body>
+</html>

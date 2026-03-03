@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -26,9 +27,13 @@
                 <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
                 <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
                 <a href="digital_intensity_index.html" class="nav-link active">Digital Intensity Index</a>
+                <a href="ai_utilization.html" class="nav-link">AI Utilization</a>
             </div>
             <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
                 Checking server status...
+            </div>
+            <div style="margin-top: 12px;">
+                <button id="downloadAllChartsBtn" class="nav-link" type="button">Download all graphs (PNG)</button>
             </div>
         </header>
 
@@ -110,13 +115,70 @@
             </div>
 
             <div class="chart-container" style="height: 520px;">
-                <h3 id="trendChangeTitle" class="chart-title">% change between available years (selected level, 2021-2025, enterprise size: 10-249 employees)</h3>
+                <h3 id="trendChangeTitle" class="chart-title">Growth in Very high Digital Intensity Among Enterprises (10-249 employees)</h3>
                 <canvas id="trendChangeChart"></canvas>
             </div>
 
             <div class="chart-container" style="height: 560px;">
-                <h3 id="companySizeGrowthTitle" class="chart-title">Growth in number of companies by size class (2021–2024)</h3>
+                <h3 id="companySizeGrowthTitle" class="chart-title">Growth in number of companies by size class (2021–2023)</h3>
                 <canvas id="companySizeGrowthTrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="companyGrowthVsDigitalIntensityTitle" class="chart-title">% change in number of companies vs % change in digital intensity (2021→2023)</h3>
+                <canvas id="companyGrowthVsDigitalIntensityChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Business Dynamics vs Productivity (Sector)</h2>
+            <div class="controls" style="margin-bottom: 16px;">
+                <a id="sectorJLink" href="#" class="nav-link active">Information and communication (J)</a>
+                <a id="sectorKNLink" href="#" class="nav-link">K-N services aggregate</a>
+                <a id="sectorBNS95XKLink" href="#" class="nav-link">Industry, construction and market services (except public administration and defence; compulsory social security; activities of membership organisations)</a>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="registrationGrowthTitle" class="chart-title">Business Registration Index — Annual average of quarterly % change (Information and communication, from 2015)</h3>
+                <canvas id="registrationGrowthTrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="bankruptcyGrowthTitle" class="chart-title">Bankruptcy Index — Annual average of quarterly % change (Information and communication, from 2015)</h3>
+                <canvas id="bankruptcyGrowthTrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="productivityBankruptcyR2Title" class="chart-title">R² of productivity vs bankruptcy relation — annual trend (Information and communication, from 2015)</h3>
+                <canvas id="productivityBankruptcyR2TrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="productivityBankruptcyScatter2024Title" class="chart-title">Productivity vs bankruptcy growth (2024, Information and communication)</h3>
+                <canvas id="productivityBankruptcyScatter2024Chart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="productivityRegistrationR2Title" class="chart-title">R² of productivity vs business registration relation — annual trend (Information and communication, from 2015)</h3>
+                <canvas id="productivityRegistrationR2TrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="productivityRegistrationScatter2024Title" class="chart-title">Productivity vs business registration growth (2024, Information and communication)</h3>
+                <canvas id="productivityRegistrationScatter2024Chart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="netBusinessDynamicsBalanceTitle" class="chart-title">Net business dynamics balance proxy (REG - BKRT, annual avg % change, from 2015)</h3>
+                <canvas id="netBusinessDynamicsBalanceTrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="productivityNetBusinessDynamicsR2Title" class="chart-title">R² of productivity vs net business dynamics balance proxy — annual trend</h3>
+                <canvas id="productivityNetBusinessDynamicsR2TrendChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="productivityNetBusinessDynamicsScatter2024Title" class="chart-title">Productivity vs net business dynamics balance proxy (2024)</h3>
+                <canvas id="productivityNetBusinessDynamicsScatter2024Chart"></canvas>
             </div>
         </main>
 
