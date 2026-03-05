@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Energy Trade Section (Oil & Gases)</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Energy Trade Section (Oil & Gases)</h1>
+            <p id="energySubtitle" class="subtitle">Quarterly stacked bars for oil, gases and specific non-energy sections, with total net-trade line</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+                <a href="ai_utilization.html" class="nav-link">AI Utilization</a>
+                <a href="energy_trade.html" class="nav-link active">Energy Trade Section</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Trade Balance Section</h2>
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="energyTradeTitle" class="chart-title">Eurozone oil, gases and detailed non-energy sections with total net-trade line</h3>
+                <button id="downloadEnergyTradeBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="energyTradeChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Imports and Energy Weights</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="importsWeightsTitle" class="chart-title">Eurozone total imports and oil/gases share of total imports</h3>
+                <button id="downloadImportsWeightsBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="importsWeightsChart"></canvas>
+            </div>
+
+            <h2 class="section-title">US Oil & Gas Net Trade</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="usFuelTitle" class="chart-title">United States oil and gas net trade (real data)</h3>
+                <button id="downloadUsChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="usImportsChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Italy Fuel Import Composition</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="italyFuelTitle" class="chart-title">Italy total imports with fuel-share composition (proxy)</h3>
+                <button id="downloadItalyChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="italyImportsChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data source: Eurostat dataset ext_st_eu27_2020sitc (table reference DS-059331)</p>
+            <div class="methodology-note">
+                <strong>Methodology:</strong>
+                <ul>
+                    <li><strong>Net balance:</strong> <code>stk_flow=BAL_RT</code>, <code>indic_et=TRD_VAL_SCA</code>, partner <code>EXT_EU27_2020</code>.</li>
+                    <li><strong>Oil section:</strong> <code>SITC33</code>.</li>
+                    <li><strong>Gases section:</strong> derived as total energy <code>SITC3</code> minus oil <code>SITC33</code>.</li>
+                    <li><strong>Frequency:</strong> Monthly observations aggregated to quarter sums.</li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+
+    <script src="energy_trade.js"></script>
+</body>
+</html>

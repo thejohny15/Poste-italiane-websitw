@@ -1,5 +1,6 @@
 let digitalIntensityChart = null;
 let companySizeShareChart = null;
+let smallVsLargeSizeScatterChart = null;
 const diiVeryHighVsProductivityCharts = {};
 let sizeVsProductivityLevelScatterChart250 = null;
 let sizeVsProductivityLevelScatterChart50to249 = null;
@@ -303,11 +304,11 @@ async function chartToTitledBlob(chart) {
         return canvasToBlob(canvas);
     }
 
-    const titlePaddingTop = 24;
-    const titlePaddingBottom = 16;
+    const titlePaddingTop = 28;
+    const titlePaddingBottom = 20;
     const sidePadding = 28;
-    const lineHeight = 34;
-    const titleFontPx = 28;
+    const lineHeight = 44;
+    const titleFontPx = 36;
 
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = canvas.width;
@@ -444,7 +445,7 @@ function updateSizeUi(sizeEmp) {
     if (trendChangeTitle) {
         const selectedIndic = getSelectedTrendIndicator();
         const indicatorLabel = (TREND_INDICATOR_CONFIG[selectedIndic] || TREND_INDICATOR_CONFIG['E_DI3_VHI']).shortLabel;
-        trendChangeTitle.textContent = `Growth in ${indicatorLabel} Digital Intensity Among Enterprises (${sizeLabel})`;
+        trendChangeTitle.textContent = `Multiple of ${indicatorLabel} Digital Intensity vs first available year (${sizeLabel})`;
     }
     if (link10to49 && link50to249 && link10to249 && linkGE10 && linkGE250) {
         link10to49.classList.toggle('active', sizeEmp === '10-49');
@@ -549,6 +550,216 @@ function renderCompanySizeShareChart(payload) {
             }
         })
     });
+}
+
+function computePercentChange(startValue, endValue) {
+    const start = Number(startValue);
+    const end = Number(endValue);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start === 0) return null;
+    return ((end - start) / Math.abs(start)) * 100;
+}
+
+async function fetchCompanySizeShareHistoryLastFiveYears() {
+    const latestCandidateYear = new Date().getFullYear();
+    const collected = [];
+
+    for (let year = latestCandidateYear; year >= latestCandidateYear - 12; year--) {
+        try {
+            const response = await fetch(`${API_BASE}/api/company-size-shares-by-country?year=${year}`);
+            if (!response.ok) continue;
+            const payload = await response.json();
+            const rows = Array.isArray(payload.rows) ? payload.rows : [];
+            if (!rows.length) continue;
+            collected.push({ year, rows });
+            if (collected.length >= 5) break;
+        } catch (error) {
+            console.warn(`Unable to load company size shares for year ${year}:`, error);
+        }
+    }
+
+    if (collected.length < 2) {
+        return null;
+    }
+
+    const chronological = [...collected].sort((a, b) => a.year - b.year);
+    const start = chronological[0];
+    const end = chronological[chronological.length - 1];
+
+    const startByGeo = new Map((start.rows || []).map(row => [row.geo, row]));
+    const endByGeo = new Map((end.rows || []).map(row => [row.geo, row]));
+    const allGeos = Array.from(new Set([...startByGeo.keys(), ...endByGeo.keys()]));
+
+    const rows = allGeos
+        .map(geo => {
+            const startRow = startByGeo.get(geo);
+            const endRow = endByGeo.get(geo);
+            if (!startRow || !endRow) return null;
+
+            const smallChange = computePercentChange(startRow.share_10_49, endRow.share_10_49);
+            const largeChange = computePercentChange(startRow.share_250_plus, endRow.share_250_plus);
+            if (smallChange == null || largeChange == null) return null;
+
+            return {
+                geo,
+                country: endRow.country || startRow.country || geo,
+                change_share_10_49_pct: smallChange,
+                change_share_250_plus_pct: largeChange,
+            };
+        })
+        .filter(Boolean);
+
+    return {
+        start_year: start.year,
+        end_year: end.year,
+        year_count: chronological.length,
+        rows,
+    };
+}
+
+function renderSmallVsLargeSizeScatterChart(payload) {
+    const canvas = document.getElementById('smallVsLargeSizeScatterChart');
+    if (!canvas) return;
+
+    const rows = (payload.rows || []).filter(row => row && row.change_share_10_49_pct != null && row.change_share_250_plus_pct != null);
+    if (!rows.length) return;
+
+    const countryRows = rows.filter(row => row.geo !== AGG_GEO_CODE);
+    const aggregateRow = rows.find(row => row.geo === AGG_GEO_CODE);
+
+    const allValues = rows.flatMap(row => [Number(row.change_share_10_49_pct), Number(row.change_share_250_plus_pct)]).filter(v => Number.isFinite(v));
+    const valueMin = allValues.length ? Math.min(...allValues) : 0;
+    const valueMax = allValues.length ? Math.max(...allValues) : 100;
+    const minBound = Math.floor(valueMin - 2);
+    const maxBound = Math.ceil(valueMax + 2);
+    const absBound = Math.max(Math.abs(minBound), Math.abs(maxBound), 2);
+    const axisMin = -absBound;
+    const axisMax = absBound;
+
+    const toPoint = (row) => ({
+        x: Number(row.change_share_10_49_pct),
+        y: Number(row.change_share_250_plus_pct),
+        country: row.country,
+        geo: row.geo,
+    });
+
+    const datasets = [
+        {
+            label: 'Eurozone countries',
+            data: countryRows.map(toPoint),
+            backgroundColor: '#1E4D67',
+            borderColor: '#1E4D67',
+            pointRadius: 5,
+            pointHoverRadius: 7
+        }
+    ];
+
+    if (aggregateRow) {
+        datasets.push({
+            label: 'Eurozone aggregate',
+            data: [toPoint(aggregateRow)],
+            backgroundColor: '#DC2626',
+            borderColor: '#DC2626',
+            pointRadius: 7,
+            pointHoverRadius: 9
+        });
+    }
+
+    datasets.push({
+        label: 'Equal share line',
+        type: 'line',
+        data: [
+            { x: axisMin, y: axisMin },
+            { x: axisMax, y: axisMax }
+        ],
+        borderColor: '#111827',
+        borderWidth: 1.8,
+        borderDash: [6, 5],
+        pointRadius: 0,
+        fill: false,
+        tension: 0
+    });
+
+    if (smallVsLargeSizeScatterChart) {
+        smallVsLargeSizeScatterChart.destroy();
+    }
+
+    smallVsLargeSizeScatterChart = new Chart(canvas.getContext('2d'), {
+        type: 'scatter',
+        plugins: [countryPointLabelPlugin],
+        data: { datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'nearest',
+                intersect: true
+            },
+            scales: {
+                x: {
+                    min: axisMin,
+                    max: axisMax,
+                    title: {
+                        display: true,
+                        text: `% change in share of small firms (10-49, ${payload.start_year}→${payload.end_year})`
+                    },
+                    ticks: {
+                        callback: value => `${Number(value).toFixed(1)}%`
+                    },
+                    grid: {
+                        color: '#D1D5DB'
+                    }
+                },
+                y: {
+                    min: axisMin,
+                    max: axisMax,
+                    title: {
+                        display: true,
+                        text: `% change in share of large firms (250+, ${payload.start_year}→${payload.end_year})`
+                    },
+                    ticks: {
+                        callback: value => `${Number(value).toFixed(1)}%`
+                    },
+                    grid: {
+                        color: '#D1D5DB'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        title: function (items) {
+                            if (!items || !items.length) return '';
+                            return items[0].raw.country || '';
+                        },
+                        label: function (context) {
+                            if (context.dataset && context.dataset.label === 'Equal share line') {
+                                return 'Dashed diagonal: equal % change in small-share and large-share';
+                            }
+                            const x = context.raw.x;
+                            const y = context.raw.y;
+                            return `10-49 share change: ${Number(x).toFixed(2)}% · 250+ share change: ${Number(y).toFixed(2)}%`;
+                        }
+                    }
+                },
+                countryPointLabels: {
+                    enabled: true,
+                    fontSize: 10,
+                    color: '#374151',
+                    offsetX: 7,
+                    offsetY: -7
+                }
+            }
+        }
+    });
+
+    const titleElement = document.getElementById('smallVsLargeSizeTitle');
+    if (titleElement) {
+        titleElement.textContent = `% change in share of 10-49 firms vs % change in share of 250+ firms (${payload.start_year}→${payload.end_year}, last ${payload.year_count} available years)`;
+    }
 }
 
 function buildScatterRegressionLinePoints(rows, xKey, regressionStats) {
@@ -1084,6 +1295,30 @@ function setupTrendIndicatorControls() {
     });
 }
 
+function setupTrendCountryControls() {
+    const selected = getSelectedTrendCountry();
+
+    const mapping = [
+        ['trendCountryEurozoneLink', 'EA20'],
+        ['trendCountryBelgiumLink', 'BE'],
+        ['trendCountryFranceLink', 'FR'],
+        ['trendCountrySpainLink', 'ES'],
+        ['trendCountryItalyLink', 'IT'],
+        ['trendCountryGermanyLink', 'DE'],
+        ['trendCountryPolandLink', 'PL']
+    ];
+
+    mapping.forEach(([id, code]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', selected === code);
+        el.addEventListener('click', function (event) {
+            event.preventDefault();
+            setQueryParamAndReload('trend_geo', code);
+        });
+    });
+}
+
 function setupNaceControls() {
     const selected = getSelectedNaceR2();
     const linkJ = document.getElementById('sectorJLink');
@@ -1119,7 +1354,7 @@ function renderVeryHighTrendChart(payload, sizeEmp) {
 
     const ctx = canvas.getContext('2d');
     const palette = {
-        'European Union': '#0F766E',
+        'Eurozone': '#0F766E',
         'Belgium': '#2563EB',
         'France': '#DC2626',
         'Spain': '#D97706',
@@ -1199,44 +1434,25 @@ function renderVeryHighTrendChart(payload, sizeEmp) {
     });
 }
 
-function buildYoyChangeSeries(points) {
+function buildGrowthMultipleSeries(points) {
     const ordered = [...(points || [])].sort((a, b) => Number(a.year) - Number(b.year));
     if (!ordered.length) return [];
 
     const known = ordered.filter(point => point.value != null);
     if (!known.length) return [];
 
-    const series = [];
-    const first = known[0];
-    series.push({
-        x: `${first.year}-01-01`,
-        y: 0,
-        sourceFrom: null,
-        sourceTo: Number(first.year),
-        isBaseline: true
-    });
+    const baseline = known[0];
+    if (baseline.value == null || Number(baseline.value) === 0) return [];
 
-    for (let i = 1; i < known.length; i++) {
-        const prev = known[i - 1];
-        const curr = known[i];
-        const prevYear = Number(prev.year);
-        const currYear = Number(curr.year);
+    const baselineValue = Number(baseline.value);
 
-        if (prev.value == null || curr.value == null || prev.value === 0) {
-            continue;
-        }
-
-        const intervalPctChange = ((curr.value - prev.value) / Math.abs(prev.value)) * 100;
-        series.push({
-            x: `${curr.year}-01-01`,
-            y: intervalPctChange,
-            sourceFrom: prevYear,
-            sourceTo: currYear,
-            isBaseline: false
-        });
-    }
-
-    return series;
+    return known.map(point => ({
+        x: `${point.year}-01-01`,
+        y: Number(point.value) / baselineValue,
+        sourceBaselineYear: Number(baseline.year),
+        sourceYear: Number(point.year),
+        isBaseline: Number(point.year) === Number(baseline.year)
+    }));
 }
 
 function renderTrendChangeChart(payload, sizeEmp) {
@@ -1258,7 +1474,7 @@ function renderTrendChangeChart(payload, sizeEmp) {
         const color = palette[item.country] || '#1E4D67';
         return {
             label: item.country,
-            data: buildYoyChangeSeries(item.points),
+            data: buildGrowthMultipleSeries(item.points),
             borderColor: color,
             backgroundColor: `${color}22`,
             borderWidth: 2.2,
@@ -1298,10 +1514,10 @@ function renderTrendChangeChart(payload, sizeEmp) {
                 y: {
                     title: {
                         display: true,
-                        text: 'Change vs previous available point (%)'
+                        text: 'Multiple vs first available year (x)'
                     },
                     ticks: {
-                        callback: value => `${Number(value).toFixed(1)}%`
+                        callback: value => `${Number(value).toFixed(2)}x`
                     }
                 }
             },
@@ -1316,14 +1532,18 @@ function renderTrendChangeChart(payload, sizeEmp) {
                             const v = context.parsed.y;
                             if (v == null) return `${context.dataset.label}: N/A`;
                             if (context.raw && context.raw.isBaseline) {
-                                return `${context.dataset.label}: ${v.toFixed(2)}% baseline (${payload.indicator || 'Digital intensity share'}, ${(SIZE_CONFIG[sizeEmp] || SIZE_CONFIG['10-249']).shortLabel})`;
+                                const baselineYear = context.raw && context.raw.sourceBaselineYear ? Number(context.raw.sourceBaselineYear) : null;
+                                if (baselineYear) {
+                                    return `${context.dataset.label}: ${v.toFixed(2)}x (baseline year ${baselineYear}, ${payload.indicator || 'Digital intensity share'}, ${(SIZE_CONFIG[sizeEmp] || SIZE_CONFIG['10-249']).shortLabel})`;
+                                }
+                                return `${context.dataset.label}: ${v.toFixed(2)}x baseline (${payload.indicator || 'Digital intensity share'}, ${(SIZE_CONFIG[sizeEmp] || SIZE_CONFIG['10-249']).shortLabel})`;
                             }
-                            const fromYear = context.raw && context.raw.sourceFrom ? Number(context.raw.sourceFrom) : null;
-                            const toYear = context.raw && context.raw.sourceTo ? Number(context.raw.sourceTo) : null;
-                            if (fromYear && toYear) {
-                                return `${context.dataset.label}: ${v.toFixed(2)}% (${payload.indicator || 'Digital intensity share'}, ${fromYear}→${toYear}, ${(SIZE_CONFIG[sizeEmp] || SIZE_CONFIG['10-249']).shortLabel})`;
+                            const baselineYear = context.raw && context.raw.sourceBaselineYear ? Number(context.raw.sourceBaselineYear) : null;
+                            const toYear = context.raw && context.raw.sourceYear ? Number(context.raw.sourceYear) : null;
+                            if (baselineYear && toYear) {
+                                return `${context.dataset.label}: ${v.toFixed(2)}x (${payload.indicator || 'Digital intensity share'}, ${baselineYear}→${toYear}, ${(SIZE_CONFIG[sizeEmp] || SIZE_CONFIG['10-249']).shortLabel})`;
                             }
-                            return `${context.dataset.label}: ${v.toFixed(2)}% (${payload.indicator || 'Digital intensity share'}, ${(SIZE_CONFIG[sizeEmp] || SIZE_CONFIG['10-249']).shortLabel})`;
+                            return `${context.dataset.label}: ${v.toFixed(2)}x (${payload.indicator || 'Digital intensity share'}, ${(SIZE_CONFIG[sizeEmp] || SIZE_CONFIG['10-249']).shortLabel})`;
                         }
                     }
                 }
@@ -2799,6 +3019,17 @@ async function fetchAndRenderDigitalIntensity() {
         loadedAtLeastOneChart = true;
     } catch (error) {
         console.error('Error loading company-size-share chart:', error);
+    }
+
+    try {
+        const sizeShareHistoryPayload = await fetchCompanySizeShareHistoryLastFiveYears();
+        if (!sizeShareHistoryPayload || !(sizeShareHistoryPayload.rows || []).length) {
+            throw new Error('Insufficient history to compute % changes for company size shares.');
+        }
+        renderSmallVsLargeSizeScatterChart(sizeShareHistoryPayload);
+        loadedAtLeastOneChart = true;
+    } catch (error) {
+        console.error('Error loading small-vs-large % change scatter chart:', error);
     }
 
     try {

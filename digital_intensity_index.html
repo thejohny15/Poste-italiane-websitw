@@ -28,6 +28,7 @@
                 <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
                 <a href="digital_intensity_index.html" class="nav-link active">Digital Intensity Index</a>
                 <a href="ai_utilization.html" class="nav-link">AI Utilization</a>
+                <a href="energy_trade.html" class="nav-link">Energy Fuels Trade</a>
             </div>
             <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
                 Checking server status...
@@ -42,6 +43,10 @@
             <div class="chart-container" style="height: 980px;">
                 <h3 id="companySizeShareTitle" class="chart-title">Share of companies by size class (%, 2024: 10-49, 50-249, 250+)</h3>
                 <canvas id="companySizeShareChart"></canvas>
+            </div>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="smallVsLargeSizeTitle" class="chart-title">% change in share of 10-49 firms vs % change in share of 250+ firms (last 5 available years, eurozone countries)</h3>
+                <canvas id="smallVsLargeSizeScatterChart"></canvas>
             </div>
             <div class="chart-container" style="height: 540px;">
                 <h3 id="sizeVsProductivityLevelTitle250" class="chart-title">Share of 250+ companies vs labour productivity level (2024)</h3>
@@ -115,7 +120,7 @@
             </div>
 
             <div class="chart-container" style="height: 520px;">
-                <h3 id="trendChangeTitle" class="chart-title">Growth in Very high Digital Intensity Among Enterprises (10-249 employees)</h3>
+                <h3 id="trendChangeTitle" class="chart-title">Multiple of Very high Digital Intensity vs first available year (10-249 employees)</h3>
                 <canvas id="trendChangeChart"></canvas>
             </div>
 

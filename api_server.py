@@ -8,7 +8,7 @@ from flask_cors import CORS
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
 import re
 import json
@@ -26,6 +26,9 @@ DATA_CACHE: dict[str, Any] = {
     'us_equity_holders_percentage_sp500': None,
     'us_equity_updated_at': None,
 }
+
+US_REAL_ENERGY_CACHE: dict[tuple[int, int], dict[str, Any]] = {}
+US_REAL_ENERGY_CACHE_TTL_SECONDS = 3600
 
 EUROZONE_MEMBER_CODES = {
     'AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'EL', 'IE',
@@ -555,6 +558,50 @@ def get_economic_data():
         response_data['oilPrices'].append(oil_dict.get(date, None))
     
     return jsonify(response_data)
+
+
+@app.route('/api/eurozone-gas-prices', methods=['GET'])
+def get_eurozone_gas_prices():
+    """Return monthly natural gas and LNG price series (USD per MMBtu)."""
+    try:
+        start_date = request.args.get('start_date', '2002-01-01')
+        end_date = request.args.get('end_date', datetime.utcnow().strftime('%Y-%m-%d'))
+
+        # World Bank commodity prices via FRED
+        # PNGASEUUSDM: Natural Gas, Europe
+        # PNGASJPUSDM: Liquefied Natural Gas, Japan
+        natural_gas_series = fetch_fred_data('PNGASEUUSDM', start_date, end_date, FRED_API_KEY)
+        lng_series = fetch_fred_data('PNGASJPUSDM', start_date, end_date, FRED_API_KEY)
+
+        ng_map = {date: value for date, value in natural_gas_series}
+        lng_map = {date: value for date, value in lng_series}
+        dates = sorted(set(ng_map.keys()) | set(lng_map.keys()))
+
+        payload = {
+            'unit': 'USD per MMBtu',
+            'source': 'FRED commodity prices (World Bank Pink Sheet series)',
+            'series': [
+                {
+                    'code': 'PNGASEUUSDM',
+                    'label': 'Natural gas price (Europe)',
+                    'points': [{'date': date, 'value': ng_map.get(date)} for date in dates]
+                },
+                {
+                    'code': 'PNGASJPUSDM',
+                    'label': 'Liquefied natural gas price (LNG, Japan)',
+                    'points': [{'date': date, 'value': lng_map.get(date)} for date in dates]
+                }
+            ],
+            'start_date': dates[0] if dates else None,
+            'end_date': dates[-1] if dates else None,
+        }
+
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in eurozone-gas-prices endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -1745,6 +1792,945 @@ def fetch_te_top_tax_rate(country_slug: str):
     return payload
 
 
+def fetch_eurozone_energy_fuels_trade():
+    """Fetch quarterly net trade section for oil and gases, plus total energy net line."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ext_st_eu27_2020sitc'
+
+    series_codes = {
+        'TOTAL': 'All traded items (TOTAL)',
+        'SITC3': 'Total energy fuels (SITC3)',
+        'SITC33': 'Oil / petroleum products (SITC33)',
+        'SITC0_1': 'Food, drinks and tobacco (SITC0_1)',
+        'SITC2': 'Raw materials (SITC2)',
+        'SITC5': 'Chemicals (SITC5)',
+        'SITC7': 'Machinery & vehicles (SITC7)',
+        'SITC6_8': 'Manufactured goods (SITC6_8)',
+    }
+
+    # Source dataset is already EU aggregate-oriented in this custom table
+    geo_code = 'EU27_2020'
+    geo_label = 'Euro area / EU aggregate (EU27_2020 in source table)'
+    partner_code = 'EXT_EU27_2020'
+    partner_label = 'Extra-EU partner aggregate (EXT_EU27_2020)'
+
+    monthly_by_code = {code: {} for code in series_codes.keys()}
+
+    for sitc_code in series_codes.keys():
+        params = {
+            'lang': 'en',
+            'stk_flow': 'BAL_RT',
+            'indic_et': 'TRD_VAL_SCA',
+            'partner': partner_code,
+            'sitc06': sitc_code,
+        }
+
+        payload = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(base_url, params=params, timeout=45)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"Energy fuels section fetch failed (attempt {attempt}/3, sitc={sitc_code}): {e}")
+                if attempt < 3:
+                    time.sleep(1.2 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"Energy fuels section fetch failed for sitc={sitc_code}: {last_error}")
+
+        dimension = payload.get('dimension', {})
+        time_index = dimension.get('time', {}).get('category', {}).get('index', {})
+        values = payload.get('value', {})
+
+        for time_code, time_pos in time_index.items():
+            value = values.get(str(time_pos))
+            if value is None:
+                continue
+            monthly_by_code[sitc_code][str(time_code)] = float(value)
+
+    def to_quarter_key(time_code: str):
+        parts = str(time_code).split('-')
+        if len(parts) != 2:
+            return None
+        year = parts[0]
+        month = parts[1]
+        if not (year.isdigit() and month.isdigit()):
+            return None
+        month_num = int(month)
+        if month_num < 1 or month_num > 12:
+            return None
+        quarter = ((month_num - 1) // 3) + 1
+        return f"Q{quarter}/{year}"
+
+    quarterly = {}
+    all_months = sorted(
+        set(monthly_by_code['TOTAL'].keys())
+        | set(monthly_by_code['SITC3'].keys())
+        | set(monthly_by_code['SITC33'].keys())
+    )
+    for month_code in all_months:
+        qkey = to_quarter_key(month_code)
+        if qkey is None:
+            continue
+        quarterly.setdefault(qkey, {
+            'total_all': 0.0,
+            'total_energy': 0.0,
+            'oil': 0.0,
+            'food_tobacco': 0.0,
+            'raw_materials': 0.0,
+            'chemicals': 0.0,
+            'machinery_vehicles': 0.0,
+            'manufactured_total': 0.0,
+            'total_all_count': 0,
+            'total_energy_count': 0,
+            'oil_count': 0,
+            'food_tobacco_count': 0,
+            'raw_materials_count': 0,
+            'chemicals_count': 0,
+            'machinery_vehicles_count': 0,
+            'manufactured_total_count': 0,
+        })
+
+        total_all_val = monthly_by_code['TOTAL'].get(month_code)
+        total_energy_val = monthly_by_code['SITC3'].get(month_code)
+        oil_val = monthly_by_code['SITC33'].get(month_code)
+        food_tobacco_val = monthly_by_code['SITC0_1'].get(month_code)
+        raw_materials_val = monthly_by_code['SITC2'].get(month_code)
+        chemicals_val = monthly_by_code['SITC5'].get(month_code)
+        machinery_vehicles_val = monthly_by_code['SITC7'].get(month_code)
+        manufactured_total_val = monthly_by_code['SITC6_8'].get(month_code)
+
+        if total_all_val is not None:
+            quarterly[qkey]['total_all'] += total_all_val
+            quarterly[qkey]['total_all_count'] += 1
+        if total_energy_val is not None:
+            quarterly[qkey]['total_energy'] += total_energy_val
+            quarterly[qkey]['total_energy_count'] += 1
+        if oil_val is not None:
+            quarterly[qkey]['oil'] += oil_val
+            quarterly[qkey]['oil_count'] += 1
+        if food_tobacco_val is not None:
+            quarterly[qkey]['food_tobacco'] += food_tobacco_val
+            quarterly[qkey]['food_tobacco_count'] += 1
+        if raw_materials_val is not None:
+            quarterly[qkey]['raw_materials'] += raw_materials_val
+            quarterly[qkey]['raw_materials_count'] += 1
+        if chemicals_val is not None:
+            quarterly[qkey]['chemicals'] += chemicals_val
+            quarterly[qkey]['chemicals_count'] += 1
+        if machinery_vehicles_val is not None:
+            quarterly[qkey]['machinery_vehicles'] += machinery_vehicles_val
+            quarterly[qkey]['machinery_vehicles_count'] += 1
+        if manufactured_total_val is not None:
+            quarterly[qkey]['manufactured_total'] += manufactured_total_val
+            quarterly[qkey]['manufactured_total_count'] += 1
+
+    quarter_keys = sorted(
+        quarterly.keys(),
+        key=lambda q: (int(q.split('/')[1]), int(q[1]))
+    )
+
+    points = []
+    for qkey in quarter_keys:
+        bucket = quarterly[qkey]
+        if bucket['total_all_count'] == 0 and bucket['total_energy_count'] == 0 and bucket['oil_count'] == 0:
+            continue
+
+        total_all_net = bucket['total_all'] if bucket['total_all_count'] > 0 else None
+        total_energy_net = bucket['total_energy'] if bucket['total_energy_count'] > 0 else None
+        oil_net = bucket['oil'] if bucket['oil_count'] > 0 else None
+        gas_net = (total_energy_net - oil_net) if (total_energy_net is not None and oil_net is not None) else None
+
+        food_tobacco_net = bucket['food_tobacco'] if bucket['food_tobacco_count'] > 0 else None
+        raw_materials_net = bucket['raw_materials'] if bucket['raw_materials_count'] > 0 else None
+        chemicals_net = bucket['chemicals'] if bucket['chemicals_count'] > 0 else None
+        machinery_vehicles_net = bucket['machinery_vehicles'] if bucket['machinery_vehicles_count'] > 0 else None
+        manufactured_total_net = bucket['manufactured_total'] if bucket['manufactured_total_count'] > 0 else None
+        other_manufactured_net = (
+            manufactured_total_net - machinery_vehicles_net
+            if (manufactured_total_net is not None and machinery_vehicles_net is not None)
+            else None
+        )
+
+        known_components = [
+            oil_net,
+            gas_net,
+            food_tobacco_net,
+            raw_materials_net,
+            chemicals_net,
+            machinery_vehicles_net,
+            other_manufactured_net,
+        ]
+        known_sum = sum(value for value in known_components if value is not None)
+        other_goods_net = (total_all_net - known_sum) if total_all_net is not None else None
+
+        points.append({
+            'period': qkey,
+            'oil_net_million_eur': oil_net,
+            'gases_net_million_eur': gas_net,
+            'food_tobacco_net_million_eur': food_tobacco_net,
+            'raw_materials_net_million_eur': raw_materials_net,
+            'chemicals_net_million_eur': chemicals_net,
+            'machinery_vehicles_net_million_eur': machinery_vehicles_net,
+            'other_manufactured_net_million_eur': other_manufactured_net,
+            'other_goods_net_million_eur': other_goods_net,
+            'total_energy_net_million_eur': total_energy_net,
+            'total_all_items_net_million_eur': total_all_net,
+        })
+
+    def extract_year(period_label: str):
+        return int(period_label.split('/')[1])
+
+    start_year = extract_year(points[0]['period']) if points else None
+    end_year = extract_year(points[-1]['period']) if points else None
+
+    return {
+        'dataset': 'ext_st_eu27_2020sitc',
+        'table_reference': 'DS-059331',
+        'geo': geo_code,
+        'geo_label': geo_label,
+        'partner': partner_code,
+        'partner_label': partner_label,
+        'indicator': 'TRD_VAL',
+        'indicator_label': 'Trade value, seasonally adjusted net balance',
+        'currency': 'EUR',
+        'unit': 'Million EUR',
+        'frequency': 'M',
+        'aggregation': 'Quarterly sum of monthly values',
+        'start_year': start_year,
+        'end_year': end_year,
+        'component_labels': {
+            'oil': series_codes['SITC33'],
+            'gases': 'Gases section (derived as total energy SITC3 minus oil SITC33)',
+            'food_tobacco': series_codes['SITC0_1'],
+            'raw_materials': series_codes['SITC2'],
+            'chemicals': series_codes['SITC5'],
+            'machinery_vehicles': series_codes['SITC7'],
+            'other_manufactured': 'Other manufactured goods (SITC6_8 - SITC7)',
+            'other_goods': 'Residual other goods (TOTAL minus listed components)',
+            'total_energy': series_codes['SITC3'],
+            'total_all_items': series_codes['TOTAL'],
+        },
+        'points': points,
+    }
+
+
+@app.route('/api/eurozone-energy-fuels-trade', methods=['GET'])
+def get_eurozone_energy_fuels_trade():
+    """Return annual imports/exports/net trade for selected energy fuel categories."""
+    try:
+        payload = fetch_eurozone_energy_fuels_trade()
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in eurozone-energy-fuels-trade endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def fetch_eurozone_total_trade_net_quarterly():
+    """Fetch quarterly all-items net trade totals (SITC TOTAL)."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ext_st_eu27_2020sitc'
+    params = {
+        'lang': 'en',
+        'stk_flow': 'BAL_RT',
+        'indic_et': 'TRD_VAL_SCA',
+        'partner': 'EXT_EU27_2020',
+        'sitc06': 'TOTAL',
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(base_url, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            print(f"Total all-items trade fetch failed (attempt {attempt}/3): {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(f"Total all-items trade fetch failed: {last_error}")
+
+    time_index = payload.get('dimension', {}).get('time', {}).get('category', {}).get('index', {})
+    values = payload.get('value', {})
+
+    quarterly = {}
+    for time_code, time_pos in time_index.items():
+        value = values.get(str(time_pos))
+        if value is None:
+            continue
+
+        parts = str(time_code).split('-')
+        if len(parts) != 2 or (not parts[0].isdigit()) or (not parts[1].isdigit()):
+            continue
+        month_num = int(parts[1])
+        if month_num < 1 or month_num > 12:
+            continue
+        quarter = ((month_num - 1) // 3) + 1
+        period = f"Q{quarter}/{parts[0]}"
+        quarterly[period] = quarterly.get(period, 0.0) + float(value)
+
+    periods = sorted(quarterly.keys(), key=lambda p: (int(p.split('/')[1]), int(p[1])))
+    points = [{'period': period, 'total_all_items_net_million_eur': quarterly[period]} for period in periods]
+
+    start_year = int(periods[0].split('/')[1]) if periods else None
+    end_year = int(periods[-1].split('/')[1]) if periods else None
+
+    return {
+        'dataset': 'ext_st_eu27_2020sitc',
+        'sitc06': 'TOTAL',
+        'indicator': 'TRD_VAL_SCA',
+        'stk_flow': 'BAL_RT',
+        'partner': 'EXT_EU27_2020',
+        'start_year': start_year,
+        'end_year': end_year,
+        'points': points,
+    }
+
+
+def fetch_eurozone_imports_energy_weights_quarterly():
+    """Fetch quarterly net imports and oil/gases shares in positive net-imports base."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ext_st_eu27_2020sitc'
+
+    series_codes = {
+        'TOTAL': 'All goods (TOTAL)',
+        'SITC3': 'Total energy fuels (SITC3)',
+        'SITC33': 'Oil / petroleum products (SITC33)',
+        'SITC0_1': 'Food, drinks and tobacco (SITC0_1)',
+        'SITC2': 'Raw materials (SITC2)',
+        'SITC5': 'Chemicals (SITC5)',
+        'SITC7': 'Machinery & vehicles (SITC7)',
+        'SITC6_8': 'Manufactured goods (SITC6_8)',
+    }
+
+    monthly_imports_by_code = {code: {} for code in series_codes.keys()}
+    monthly_exports_by_code = {code: {} for code in series_codes.keys()}
+
+    def fetch_monthly_series(stk_flow, sitc_code):
+        params = {
+            'lang': 'en',
+            'stk_flow': stk_flow,
+            'indic_et': 'TRD_VAL',
+            'partner': 'EXT_EU27_2020',
+            'sitc06': sitc_code,
+        }
+
+        payload = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(base_url, params=params, timeout=45)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"Imports weights fetch failed (attempt {attempt}/3, flow={stk_flow}, sitc={sitc_code}): {e}")
+                if attempt < 3:
+                    time.sleep(1.2 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"Imports weights fetch failed for flow={stk_flow}, sitc={sitc_code}: {last_error}")
+
+        time_index = payload.get('dimension', {}).get('time', {}).get('category', {}).get('index', {})
+        values = payload.get('value', {})
+        output = {}
+
+        for time_code, time_pos in time_index.items():
+            value = values.get(str(time_pos))
+            if value is None:
+                continue
+            output[str(time_code)] = float(value)
+
+        return output
+
+    for sitc_code in series_codes.keys():
+        monthly_imports_by_code[sitc_code] = fetch_monthly_series('IMP', sitc_code)
+        monthly_exports_by_code[sitc_code] = fetch_monthly_series('EXP', sitc_code)
+
+    quarterly = {}
+    all_months = sorted(
+        set(monthly_imports_by_code['TOTAL'].keys())
+        | set(monthly_exports_by_code['TOTAL'].keys())
+        | set(monthly_imports_by_code['SITC3'].keys())
+        | set(monthly_exports_by_code['SITC3'].keys())
+        | set(monthly_imports_by_code['SITC33'].keys())
+        | set(monthly_exports_by_code['SITC33'].keys())
+    )
+
+    for month_code in all_months:
+        parts = str(month_code).split('-')
+        if len(parts) != 2 or (not parts[0].isdigit()) or (not parts[1].isdigit()):
+            continue
+
+        month_num = int(parts[1])
+        if month_num < 1 or month_num > 12:
+            continue
+
+        quarter = ((month_num - 1) // 3) + 1
+        period = f"Q{quarter}/{parts[0]}"
+        quarterly.setdefault(period, {
+            'total': 0.0,
+            'energy': 0.0,
+            'oil': 0.0,
+            'food_tobacco': 0.0,
+            'raw_materials': 0.0,
+            'chemicals': 0.0,
+            'machinery_vehicles': 0.0,
+            'manufactured_total': 0.0,
+            'total_count': 0,
+            'energy_count': 0,
+            'oil_count': 0,
+            'food_tobacco_count': 0,
+            'raw_materials_count': 0,
+            'chemicals_count': 0,
+            'machinery_vehicles_count': 0,
+            'manufactured_total_count': 0,
+        })
+
+        def net_for(code):
+            imp = monthly_imports_by_code[code].get(month_code)
+            exp = monthly_exports_by_code[code].get(month_code)
+            if imp is None and exp is None:
+                return None
+            return (imp or 0.0) - (exp or 0.0)
+
+        total_val = net_for('TOTAL')
+        energy_val = net_for('SITC3')
+        oil_val = net_for('SITC33')
+        food_tobacco_val = net_for('SITC0_1')
+        raw_materials_val = net_for('SITC2')
+        chemicals_val = net_for('SITC5')
+        machinery_vehicles_val = net_for('SITC7')
+        manufactured_total_val = net_for('SITC6_8')
+
+        if total_val is not None:
+            quarterly[period]['total'] += total_val
+            quarterly[period]['total_count'] += 1
+        if energy_val is not None:
+            quarterly[period]['energy'] += energy_val
+            quarterly[period]['energy_count'] += 1
+        if oil_val is not None:
+            quarterly[period]['oil'] += oil_val
+            quarterly[period]['oil_count'] += 1
+        if food_tobacco_val is not None:
+            quarterly[period]['food_tobacco'] += food_tobacco_val
+            quarterly[period]['food_tobacco_count'] += 1
+        if raw_materials_val is not None:
+            quarterly[period]['raw_materials'] += raw_materials_val
+            quarterly[period]['raw_materials_count'] += 1
+        if chemicals_val is not None:
+            quarterly[period]['chemicals'] += chemicals_val
+            quarterly[period]['chemicals_count'] += 1
+        if machinery_vehicles_val is not None:
+            quarterly[period]['machinery_vehicles'] += machinery_vehicles_val
+            quarterly[period]['machinery_vehicles_count'] += 1
+        if manufactured_total_val is not None:
+            quarterly[period]['manufactured_total'] += manufactured_total_val
+            quarterly[period]['manufactured_total_count'] += 1
+
+    periods = sorted(quarterly.keys(), key=lambda p: (int(p.split('/')[1]), int(p[1])))
+    points = []
+    for period in periods:
+        bucket = quarterly[period]
+
+        total_net = bucket['total'] if bucket['total_count'] > 0 else None
+        energy_net = bucket['energy'] if bucket['energy_count'] > 0 else None
+        oil_net = bucket['oil'] if bucket['oil_count'] > 0 else None
+        gases_net = (energy_net - oil_net) if (energy_net is not None and oil_net is not None) else None
+
+        food_tobacco_net = bucket['food_tobacco'] if bucket['food_tobacco_count'] > 0 else None
+        raw_materials_net = bucket['raw_materials'] if bucket['raw_materials_count'] > 0 else None
+        chemicals_net = bucket['chemicals'] if bucket['chemicals_count'] > 0 else None
+        machinery_vehicles_net = bucket['machinery_vehicles'] if bucket['machinery_vehicles_count'] > 0 else None
+        manufactured_total_net = bucket['manufactured_total'] if bucket['manufactured_total_count'] > 0 else None
+        other_manufactured_net = (
+            manufactured_total_net - machinery_vehicles_net
+            if (manufactured_total_net is not None and machinery_vehicles_net is not None)
+            else None
+        )
+        known_components = [
+            oil_net,
+            gases_net,
+            food_tobacco_net,
+            raw_materials_net,
+            chemicals_net,
+            machinery_vehicles_net,
+            other_manufactured_net,
+        ]
+        known_sum = sum(value for value in known_components if value is not None)
+        other_goods_net = (total_net - known_sum) if total_net is not None else None
+
+        components_for_base = [
+            oil_net,
+            gases_net,
+            food_tobacco_net,
+            raw_materials_net,
+            chemicals_net,
+            machinery_vehicles_net,
+            other_manufactured_net,
+            other_goods_net,
+        ]
+        positive_net_imports = sum(max(value, 0.0) for value in components_for_base if value is not None)
+
+        oil_positive = max(oil_net, 0.0) if oil_net is not None else None
+        gases_positive = max(gases_net, 0.0) if gases_net is not None else None
+
+        oil_weight_pct = ((oil_positive / positive_net_imports) * 100.0) if (positive_net_imports > 0 and oil_positive is not None) else None
+        gases_weight_pct = ((gases_positive / positive_net_imports) * 100.0) if (positive_net_imports > 0 and gases_positive is not None) else None
+
+        points.append({
+            'period': period,
+            'total_net_imports_million_eur': positive_net_imports,
+            'total_balance_million_eur': total_net,
+            'oil_net_imports_million_eur': oil_net,
+            'gases_net_imports_million_eur': gases_net,
+            'oil_weight_pct_of_total_net_imports': oil_weight_pct,
+            'gases_weight_pct_of_total_net_imports': gases_weight_pct,
+        })
+
+    start_year = int(periods[0].split('/')[1]) if periods else None
+    end_year = int(periods[-1].split('/')[1]) if periods else None
+
+    return {
+        'dataset': 'ext_st_eu27_2020sitc',
+        'table_reference': 'DS-059331',
+        'partner': 'EXT_EU27_2020',
+        'stk_flow': 'IMP & EXP (net imports = IMP - EXP)',
+        'indic_et': 'TRD_VAL',
+        'frequency': 'M',
+        'aggregation': 'Quarterly sum of monthly values',
+        'weight_method': 'Section weights are computed on positive net-imports base only; zero and negative sections are excluded from denominator.',
+        'start_year': start_year,
+        'end_year': end_year,
+        'points': points,
+    }
+
+
+def fetch_eur_usd_exchange_quarterly(start_date='2000-01-01', end_date=None):
+    """Fetch quarterly average EUR/USD exchange rate (USD per 1 EUR) from FRED."""
+    if end_date is None:
+        end_date = datetime.utcnow().strftime('%Y-%m-%d')
+
+    # DEXUSEU is U.S. Dollars to One Euro, daily (USD per EUR)
+    daily_series = fetch_fred_data('DEXUSEU', start_date, end_date, FRED_API_KEY)
+
+    quarterly_buckets = {}
+    for date_str, value in daily_series:
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        except Exception:
+            continue
+
+        quarter = ((date_obj.month - 1) // 3) + 1
+        period = f"Q{quarter}/{date_obj.year}"
+        quarterly_buckets.setdefault(period, []).append(float(value))
+
+    periods = sorted(quarterly_buckets.keys(), key=lambda p: (int(p.split('/')[1]), int(p[1])))
+    points = [
+        {
+            'period': period,
+            'eur_usd': (sum(quarterly_buckets[period]) / len(quarterly_buckets[period])) if quarterly_buckets[period] else None
+        }
+        for period in periods
+    ]
+
+    start_year = int(periods[0].split('/')[1]) if periods else None
+    end_year = int(periods[-1].split('/')[1]) if periods else None
+
+    return {
+        'series_id': 'DEXUSEU',
+        'label': 'EUR/USD (USD per 1 EUR)',
+        'unit': 'USD per EUR',
+        'frequency': 'Q',
+        'aggregation': 'Quarterly average of daily observations',
+        'start_year': start_year,
+        'end_year': end_year,
+        'points': points,
+    }
+
+
+@app.route('/api/eurozone-total-net-trade-all-items', methods=['GET'])
+def get_eurozone_total_net_trade_all_items():
+    """Return quarterly all-items net trade totals."""
+    try:
+        payload = fetch_eurozone_total_trade_net_quarterly()
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in eurozone-total-net-trade-all-items endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/eurozone-imports-energy-weights', methods=['GET'])
+def get_eurozone_imports_energy_weights():
+    """Return quarterly total imports and oil/gases shares in total imports."""
+    try:
+        payload = fetch_eurozone_imports_energy_weights_quarterly()
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in eurozone-imports-energy-weights endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def fetch_world_bank_indicator_series(country_code, indicator_code):
+    """Fetch annual World Bank indicator values with basic retry/backoff."""
+    url = f"https://api.worldbank.org/v2/country/{country_code}/indicator/{indicator_code}"
+    params = {
+        'format': 'json',
+        'per_page': 20000,
+    }
+
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(url, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, list) or len(payload) < 2 or not isinstance(payload[1], list):
+                return {}
+
+            series = {}
+            for row in payload[1]:
+                year = row.get('date')
+                value = row.get('value')
+                if year is None or value is None:
+                    continue
+                year_str = str(year)
+                if not year_str.isdigit():
+                    continue
+                series[year_str] = float(value)
+            return series
+        except Exception as e:
+            last_error = e
+            print(f"World Bank fetch failed (attempt {attempt}/3, country={country_code}, indicator={indicator_code}): {e}")
+            if attempt < 3:
+                time.sleep(1.5 * attempt)
+
+    raise RuntimeError(f"World Bank fetch failed for country={country_code}, indicator={indicator_code}: {last_error}")
+
+
+def fetch_us_italy_imports_fuel_proxy():
+    """Return annual imports and fuel-share composition for US and Italy (fuel combined proxy)."""
+    countries = {
+        'USA': 'United States',
+        'ITA': 'Italy',
+    }
+
+    # NE.IMP.GNFS.CD: Imports of goods and services (current US$)
+    # TM.VAL.FUEL.ZS.UN: Fuel imports (% of merchandise imports)
+    imports_indicator = 'NE.IMP.GNFS.CD'
+    fuel_share_indicator = 'TM.VAL.FUEL.ZS.UN'
+
+    country_series = []
+    all_years = set()
+
+    for code, label in countries.items():
+        imports_map = fetch_world_bank_indicator_series(code, imports_indicator)
+        fuel_share_map = fetch_world_bank_indicator_series(code, fuel_share_indicator)
+
+        years = sorted(set(imports_map.keys()) | set(fuel_share_map.keys()))
+        points = []
+
+        for year in years:
+            imports_value = imports_map.get(year)
+            fuel_share = fuel_share_map.get(year)
+
+            if imports_value is None and fuel_share is None:
+                continue
+
+            other_share = (100.0 - fuel_share) if fuel_share is not None else None
+            points.append({
+                'year': int(year),
+                'total_imports_usd': imports_value,
+                'fuel_share_pct': fuel_share,
+                'other_share_pct': other_share,
+            })
+            all_years.add(int(year))
+
+        country_series.append({
+            'country_code': code,
+            'country_label': label,
+            'points': sorted(points, key=lambda item: item['year'])
+        })
+
+    return {
+        'source': 'World Bank Open Data',
+        'notes': 'Fuel share is combined fuel imports percentage (no oil/gas split).',
+        'indicators': {
+            'total_imports': imports_indicator,
+            'fuel_share_pct': fuel_share_indicator,
+        },
+        'start_year': min(all_years) if all_years else None,
+        'end_year': max(all_years) if all_years else None,
+        'countries': country_series,
+    }
+
+
+@app.route('/api/us-italy-imports-fuel-proxy', methods=['GET'])
+def get_us_italy_imports_fuel_proxy():
+    """Return US and Italy imports + combined fuel share composition (annual)."""
+    try:
+        payload = fetch_us_italy_imports_fuel_proxy()
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in us-italy-imports-fuel-proxy endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def fetch_census_hs_annual_sum(flow, year, value_field, commodity_code=None, comm_lvl=None):
+    """Fetch annual U.S. Census trade HS values and sum across returned rows."""
+    if flow not in {'imports', 'exports'}:
+        raise ValueError("flow must be 'imports' or 'exports'")
+
+    base_url = f'https://api.census.gov/data/timeseries/intltrade/{flow}/hs'
+    commodity_field = 'I_COMMODITY' if flow == 'imports' else 'E_COMMODITY'
+
+    get_fields = [value_field]
+    if commodity_code is not None:
+        get_fields.append(commodity_field)
+
+    params = {
+        'get': ','.join(get_fields),
+        'time': f'{year}-12',
+    }
+    if comm_lvl:
+        params['COMM_LVL'] = comm_lvl
+    if commodity_code is not None:
+        params[commodity_field] = commodity_code
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(base_url, params=params, timeout=45)
+            if response.status_code == 204:
+                return 0.0
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            print(f"Census HS fetch failed (attempt {attempt}/3, flow={flow}, year={year}, commodity={commodity_code}): {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(f"Census HS fetch failed for flow={flow}, year={year}, commodity={commodity_code}: {last_error}")
+
+    if not isinstance(payload, list) or len(payload) < 2:
+        return 0.0
+
+    headers = payload[0]
+    if value_field not in headers:
+        return 0.0
+    value_idx = headers.index(value_field)
+
+    total = 0.0
+    for row in payload[1:]:
+        if value_idx >= len(row):
+            continue
+        raw_val = row[value_idx]
+        if raw_val in (None, '', '.'):
+            continue
+        try:
+            total += float(raw_val)
+        except Exception:
+            continue
+
+    return total
+
+
+def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None):
+    """Return annual U.S. real (non-proxy) oil/gas net-imports composition from Census HS trade values."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    def fetch_census_annual_series(flow, commodity_code, value_field):
+        base_url = f'https://api.census.gov/data/timeseries/intltrade/{flow}/hs'
+        commodity_field = 'I_COMMODITY' if flow == 'imports' else 'E_COMMODITY'
+        params = {
+            'get': f'YEAR,{value_field},{commodity_field}',
+            'COMM_LVL': 'HS4',
+            commodity_field: commodity_code,
+        }
+
+        payload = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(base_url, params=params, timeout=60)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"Census bulk fetch failed (attempt {attempt}/3, flow={flow}, code={commodity_code}): {e}")
+                status_code = getattr(getattr(e, 'response', None), 'status_code', None)
+                if status_code == 500:
+                    break
+                if attempt < 3:
+                    time.sleep(1.2 * attempt)
+
+        if payload is None:
+            # Fallback path: fetch year-by-year totals for the affected code
+            print(f"Falling back to year-by-year Census fetch for flow={flow}, code={commodity_code}")
+            annual_fallback = {}
+            annual_field = 'GEN_VAL_YR' if flow == 'imports' else 'ALL_VAL_YR'
+            for year in range(int(start_year), int(end_year) + 1):
+                try:
+                    value = fetch_census_hs_annual_sum(flow, year, annual_field, commodity_code=commodity_code, comm_lvl='HS4')
+                except Exception:
+                    value = 0.0
+                annual_fallback[year] = annual_fallback.get(year, 0.0) + float(value or 0.0)
+            return annual_fallback
+
+        if not isinstance(payload, list) or len(payload) < 2:
+            return {}
+
+        headers = payload[0]
+        year_idx = headers.index('YEAR') if 'YEAR' in headers else -1
+        value_idx = headers.index(value_field) if value_field in headers else -1
+        if year_idx < 0 or value_idx < 0:
+            return {}
+
+        annual = {}
+        for row in payload[1:]:
+            if year_idx >= len(row) or value_idx >= len(row):
+                continue
+            year_raw = str(row[year_idx])
+            if not year_raw.isdigit():
+                continue
+            year = int(year_raw)
+            try:
+                value = float(row[value_idx])
+            except Exception:
+                continue
+            annual[year] = annual.get(year, 0.0) + value
+        return annual
+
+    # Oil: HS 2709 (crude) + 2710 (refined oils), Gas: HS 2711 (petroleum gases)
+    oil_imports = fetch_census_annual_series('imports', '2709', 'GEN_VAL_MO')
+    oil_imports_2 = fetch_census_annual_series('imports', '2710', 'GEN_VAL_MO')
+    oil_exports = fetch_census_annual_series('exports', '2709', 'ALL_VAL_MO')
+    oil_exports_2 = fetch_census_annual_series('exports', '2710', 'ALL_VAL_MO')
+    gas_imports = fetch_census_annual_series('imports', '2711', 'GEN_VAL_MO')
+    gas_exports = fetch_census_annual_series('exports', '2711', 'ALL_VAL_MO')
+
+    for year, value in oil_imports_2.items():
+        oil_imports[year] = oil_imports.get(year, 0.0) + value
+    for year, value in oil_exports_2.items():
+        oil_exports[year] = oil_exports.get(year, 0.0) + value
+
+    # Fast total net imports proxy from FRED imports/exports of goods and services
+    imports_gs = fetch_fred_data('IMPGS', f'{int(start_year)}-01-01', f'{int(end_year)}-12-31', FRED_API_KEY)
+    exports_gs = fetch_fred_data('EXPGS', f'{int(start_year)}-01-01', f'{int(end_year)}-12-31', FRED_API_KEY)
+
+    imports_by_year = {}
+    exports_by_year = {}
+    for date_str, value in imports_gs:
+        year = int(str(date_str)[:4])
+        imports_by_year.setdefault(year, []).append(float(value))
+    for date_str, value in exports_gs:
+        year = int(str(date_str)[:4])
+        exports_by_year.setdefault(year, []).append(float(value))
+
+    points = []
+    for year in range(int(start_year), int(end_year) + 1):
+        imp_vals = imports_by_year.get(year, [])
+        exp_vals = exports_by_year.get(year, [])
+        total_imports = (sum(imp_vals) / len(imp_vals) * 1_000_000_000.0) if imp_vals else None
+        total_exports = (sum(exp_vals) / len(exp_vals) * 1_000_000_000.0) if exp_vals else None
+        total_net = (total_imports - total_exports) if (total_imports is not None and total_exports is not None) else None
+
+        oil_net = oil_imports.get(year, 0.0) - oil_exports.get(year, 0.0)
+        gas_net = gas_imports.get(year, 0.0) - gas_exports.get(year, 0.0)
+        other_net = (total_net - oil_net - gas_net) if total_net is not None else 0.0
+
+        positive_base = max(oil_net, 0.0) + max(gas_net, 0.0) + max(other_net, 0.0)
+        oil_weight = ((max(oil_net, 0.0) / positive_base) * 100.0) if positive_base > 0 else None
+        gas_weight = ((max(gas_net, 0.0) / positive_base) * 100.0) if positive_base > 0 else None
+        other_weight = ((max(other_net, 0.0) / positive_base) * 100.0) if positive_base > 0 else None
+
+        points.append({
+            'year': year,
+            'total_net_imports_usd': positive_base if positive_base > 0 else None,
+            'total_trade_balance_usd': total_net,
+            'oil_net_imports_usd': oil_net,
+            'gas_net_imports_usd': gas_net,
+            'other_net_imports_usd': other_net,
+            'oil_weight_pct': oil_weight,
+            'gas_weight_pct': gas_weight,
+            'other_weight_pct': other_weight,
+        })
+
+    return {
+        'source': 'U.S. Census Bureau International Trade API (HS)',
+        'notes': 'Non-proxy values. Net imports = imports - exports. Weights computed on positive net-imports base.',
+        'hs_mapping': {
+            'oil': ['2709', '2710'],
+            'gas': ['2711'],
+        },
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'points': points,
+    }
+
+
+@app.route('/api/us-real-energy-imports', methods=['GET'])
+def get_us_real_energy_imports():
+    """Return annual U.S. non-proxy oil/gas net-imports composition."""
+    try:
+        start_year = int(request.args.get('start_year', 2019))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+
+        cache_key = (start_year, end_year)
+        now_ts = time.time()
+        cached = US_REAL_ENERGY_CACHE.get(cache_key)
+        if cached and (now_ts - cached.get('computed_at', 0)) < US_REAL_ENERGY_CACHE_TTL_SECONDS:
+            return jsonify(cached['payload'])
+
+        payload = fetch_us_real_energy_imports_weights(start_year, end_year)
+        US_REAL_ENERGY_CACHE[cache_key] = {
+            'computed_at': now_ts,
+            'payload': payload,
+        }
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in us-real-energy-imports endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/eur-usd-exchange-quarterly', methods=['GET'])
+def get_eur_usd_exchange_quarterly():
+    """Return quarterly EUR/USD exchange rate (USD per EUR)."""
+    try:
+        start_date = request.args.get('start_date', '2000-01-01')
+        end_date = request.args.get('end_date', datetime.now(timezone.utc).strftime('%Y-%m-%d'))
+        payload = fetch_eur_usd_exchange_quarterly(start_date, end_date)
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in eur-usd-exchange-quarterly endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 def fetch_eurostat_digital_intensity_2025(size_emp='10-249'):
     """Fetch Eurostat isoc_e_dii for 2025 and a given enterprise size class (DII version 3 buckets)."""
     base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/isoc_e_dii'
@@ -1961,6 +2947,144 @@ def fetch_eurostat_digital_intensity_trend_2021_2025(size_emp='GE250', indic_is=
     }
 
 
+def fetch_eurostat_digital_intensity_size_evolution_trend_2021_2025(geo='EA20'):
+    """Fetch DII shares (2021-2025) across intensity buckets and size classes for one selected country."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/isoc_e_dii'
+
+    allowed_geos = {
+        'EA20': {
+            'label': 'Eurozone',
+            'fallback_codes': ['EA20', 'EA19', 'EU27_2020']
+        },
+        'BE': {'label': 'Belgium', 'fallback_codes': ['BE']},
+        'FR': {'label': 'France', 'fallback_codes': ['FR']},
+        'ES': {'label': 'Spain', 'fallback_codes': ['ES']},
+        'IT': {'label': 'Italy', 'fallback_codes': ['IT']},
+        'DE': {'label': 'Germany', 'fallback_codes': ['DE']},
+        'PL': {'label': 'Poland', 'fallback_codes': ['PL']},
+    }
+    if geo not in allowed_geos:
+        raise ValueError(f"Unsupported geo '{geo}'. Allowed: {', '.join(allowed_geos.keys())}")
+
+    size_classes = {
+        '10-49': '10-49 employees',
+        '50-249': '50-249 employees',
+        'GE250': '250+ employees',
+    }
+    indicators = {
+        'E_DI3_VLO': 'Very low',
+        'E_DI3_LO': 'Low',
+        'E_DI3_HI': 'High',
+        'E_DI3_VHI': 'Very high',
+    }
+    years = [2021, 2022, 2023, 2024, 2025]
+
+    values_by_size_indicator = {
+        size_emp: {indic_code: {} for indic_code in indicators.keys()}
+        for size_emp in size_classes.keys()
+    }
+
+    resolved_geo_code = None
+
+    for year in years:
+        for size_emp in size_classes.keys():
+            params = {
+                'lang': 'en',
+                'freq': 'A',
+                'size_emp': size_emp,
+                'nace_r2': 'C10-S951_X_K',
+                'unit': 'PC_ENT',
+                'time': str(year),
+            }
+
+            payload = None
+            last_error = None
+            for attempt in range(1, 4):
+                try:
+                    response = requests.get(base_url, params=params, timeout=45)
+                    response.raise_for_status()
+                    payload = response.json()
+                    break
+                except Exception as e:
+                    last_error = e
+                    print(f"Eurostat size-evolution trend fetch failed (attempt {attempt}/3, geo={geo}, size_emp={size_emp}, year={year}): {e}")
+                    if attempt < 3:
+                        time.sleep(1.2 * attempt)
+
+            if payload is None:
+                raise RuntimeError(f"Eurostat size-evolution trend fetch failed for geo={geo}, size_emp={size_emp}, year={year}: {last_error}")
+
+            dim_order = payload.get('id', [])
+            dim_sizes_list = payload.get('size', [])
+            dimension = payload.get('dimension', {})
+            values = payload.get('value', {})
+
+            dim_sizes = {}
+            for i, dim_name in enumerate(dim_order):
+                dim_sizes[dim_name] = dim_sizes_list[i]
+
+            geo_idx = dimension.get('geo', {}).get('category', {}).get('index', {})
+            indic_idx = dimension.get('indic_is', {}).get('category', {}).get('index', {})
+            time_idx = dimension.get('time', {}).get('category', {}).get('index', {})
+
+            time_pos = time_idx.get(str(year), 0)
+
+            geo_code_to_use = None
+            for candidate in allowed_geos[geo]['fallback_codes']:
+                if candidate in geo_idx:
+                    geo_code_to_use = candidate
+                    break
+
+            if geo_code_to_use is None:
+                continue
+
+            if resolved_geo_code is None:
+                resolved_geo_code = geo_code_to_use
+
+            for indic_code in indicators.keys():
+                indic_pos = indic_idx.get(indic_code)
+                if indic_pos is None:
+                    continue
+
+                positions = {dim: 0 for dim in dim_order}
+                if 'geo' in positions:
+                    positions['geo'] = geo_idx[geo_code_to_use]
+                if 'indic_is' in positions:
+                    positions['indic_is'] = indic_pos
+                if 'time' in positions:
+                    positions['time'] = time_pos
+
+                flat_index = _ai_flat_index(dim_order, dim_sizes, positions)
+                value = values.get(str(flat_index))
+                values_by_size_indicator[size_emp][indic_code][year] = (float(value) if value is not None else None)
+
+    sizes_payload = []
+    for size_emp, size_label in size_classes.items():
+        intensities = []
+        for indic_code, indic_label in indicators.items():
+            points = [{'year': year, 'value': values_by_size_indicator[size_emp][indic_code].get(year)} for year in years]
+            intensities.append({
+                'indicator_code': indic_code,
+                'indicator': indic_label,
+                'points': points,
+            })
+
+        sizes_payload.append({
+            'size_emp': size_emp,
+            'size_label': size_label,
+            'intensities': intensities,
+        })
+
+    return {
+        'dataset': 'isoc_e_dii',
+        'years': years,
+        'geo': geo,
+        'geo_resolved': resolved_geo_code,
+        'country': allowed_geos[geo]['label'],
+        'sizes': sizes_payload,
+    }
+
+
 @app.route('/api/digital-intensity-very-high-trend', methods=['GET'])
 def get_digital_intensity_very_high_trend():
     """Return digital intensity shares (2021-2025) for selected countries and indicator bucket."""
@@ -1973,6 +3097,22 @@ def get_digital_intensity_very_high_trend():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         print(f"Error in digital-intensity-very-high-trend endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/digital-intensity-size-evolution-trend', methods=['GET'])
+def get_digital_intensity_size_evolution_trend():
+    """Return digital intensity shares over time by intensity and company size for one selected country."""
+    try:
+        geo = (request.args.get('geo') or 'EA20').strip().upper()
+        payload = fetch_eurostat_digital_intensity_size_evolution_trend_2021_2025(geo=geo)
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in digital-intensity-size-evolution-trend endpoint: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
