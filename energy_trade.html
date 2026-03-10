@@ -27,6 +27,7 @@
                 <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
                 <a href="ai_utilization.html" class="nav-link">AI Utilization</a>
                 <a href="energy_trade.html" class="nav-link active">Energy Trade Section</a>
+                <a href="energy_europe.html" class="nav-link">Energy in Europe</a>
             </div>
             <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
                 Checking server status...
@@ -48,18 +49,61 @@
                 <canvas id="importsWeightsChart"></canvas>
             </div>
 
+            <h2 class="section-title">Petrochemicals Imports</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="petrochemEurozoneTitle" class="chart-title">Petrochemicals imports - Eurozone</h3>
+                <button id="downloadPetrochemEurozoneBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="petrochemEurozoneChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="petrochemCountriesTitle" class="chart-title">Petrochemicals imports - Countries</h3>
+                <button id="downloadPetrochemCountriesBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="petrochemCountriesChart"></canvas>
+            </div>
+
             <h2 class="section-title">US Oil & Gas Net Trade</h2>
+                <h2 class="section-title">US Oil & Gas Net Exports</h2>
             <div class="chart-container" style="height: 520px; margin-top: 20px;">
                 <h3 id="usFuelTitle" class="chart-title">United States oil and gas net trade (real data)</h3>
+                    <h3 id="usFuelTitle" class="chart-title">United States oil and gas net exports (real data)</h3>
                 <button id="downloadUsChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
                 <canvas id="usImportsChart"></canvas>
             </div>
 
-            <h2 class="section-title">Italy Fuel Import Composition</h2>
+            <h2 class="section-title">Italy Import Composition</h2>
             <div class="chart-container" style="height: 520px; margin-top: 20px;">
-                <h3 id="italyFuelTitle" class="chart-title">Italy total imports with fuel-share composition (proxy)</h3>
+                <h3 id="italyFuelTitle" class="chart-title">Italy import composition bar (oil and gases shares in total imports)</h3>
                 <button id="downloadItalyChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
                 <canvas id="italyImportsChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Germany Import Composition</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="germanyFuelTitle" class="chart-title">Germany import composition bar (oil and gases shares in total imports)</h3>
+                <button id="downloadGermanyChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="germanyImportsChart"></canvas>
+            </div>
+
+            <h2 class="section-title">France Import Composition</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="franceFuelTitle" class="chart-title">France import composition bar (oil and gases shares in total imports)</h3>
+                <button id="downloadFranceChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="franceImportsChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Spain Import Composition</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="spainFuelTitle" class="chart-title">Spain import composition bar (oil and gases shares in total imports)</h3>
+                <button id="downloadSpainChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="spainImportsChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Belgium Import Composition</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="belgiumFuelTitle" class="chart-title">Belgium import composition bar (oil and gases shares in total imports)</h3>
+                <button id="downloadBelgiumChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="belgiumImportsChart"></canvas>
             </div>
         </main>
 

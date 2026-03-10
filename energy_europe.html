@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Europe Energy Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Energy in Europe</h1>
+            <p class="subtitle">Monthly share of electricity generation by source (stacked)</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="equity.html" class="nav-link">US Equity Holders</a>
+                <a href="credit_card.html" class="nav-link">US Credit Card Risk</a>
+                <a href="mortgage.html" class="nav-link">US Mortgage Dashboard</a>
+                <a href="household_equity.html" class="nav-link">Household Equity</a>
+                <a href="italy_treasury.html" class="nav-link">Italy Treasury</a>
+                <a href="spain_treasury.html" class="nav-link">Spain Treasury</a>
+                <a href="france_treasury.html" class="nav-link">France Treasury</a>
+                <a href="germany_treasury.html" class="nav-link">Germany Treasury</a>
+                <a href="belgium_treasury.html" class="nav-link">Belgium Treasury</a>
+                <a href="poland_treasury.html" class="nav-link">Poland Treasury</a>
+                <a href="digital_intensity_index.html" class="nav-link">Digital Intensity Index</a>
+                <a href="ai_utilization.html" class="nav-link">AI Utilization</a>
+                <a href="energy_trade.html" class="nav-link">Energy Fuels Trade</a>
+                <a href="energy_europe.html" class="nav-link active">Energy in Europe</a>
+                <a href="oil_dual_api.html" class="nav-link">Oil Dual API</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Share of Electricity Generation in Europe</h2>
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="europeElectricityTitle" class="chart-title">Percentage share (monthly, stacked)</h3>
+                <canvas id="europeElectricityChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Europe Electricity Use vs Fossil Prices</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="europeUsePriceTitle" class="chart-title">Total generation, gas generation, coal generation (TWh) with EU gas and coal prices</h3>
+                <canvas id="europeUsePriceChart"></canvas>
+            </div>
+
+            <h2 class="section-title">World Oil Production (Monthly) + World Consumption (Annual)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="worldOilProductionTitle" class="chart-title">Monthly production shares by country plus annual % increase in world consumption (2018 baseline)</h3>
+                <canvas id="worldOilProductionChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Share of Electricity Generation — Selected Countries</h2>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="usElectricityTitle" class="chart-title">United States of America — percentage share (monthly, stacked)</h3>
+                <canvas id="usElectricityChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="italyElectricityTitle" class="chart-title">Italy — percentage share (monthly, stacked)</h3>
+                <canvas id="italyElectricityChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="belgiumElectricityTitle" class="chart-title">Belgium — percentage share (monthly, stacked)</h3>
+                <canvas id="belgiumElectricityChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="franceElectricityTitle" class="chart-title">France — percentage share (monthly, stacked)</h3>
+                <canvas id="franceElectricityChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="spainElectricityTitle" class="chart-title">Spain — percentage share (monthly, stacked)</h3>
+                <canvas id="spainElectricityChart"></canvas>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="germanyElectricityTitle" class="chart-title">Germany — percentage share (monthly, stacked)</h3>
+                <canvas id="germanyElectricityChart"></canvas>
+            </div>
+        </main>
+
+        <footer>
+            <p>Data source: Ember Monthly Electricity Data (Europe), CC BY 4.0</p>
+            <div class="methodology-note">
+                <strong>Key data sources:</strong>
+                <ul>
+                    <li>Eurostat</li>
+                    <li>EIA</li>
+                    <li>IRENA</li>
+                    <li>EI</li>
+                    <li>ENTSO-E</li>
+                    <li>Energy Exchange Istanbul (EPIAS)</li>
+                    <li>Department for Energy Security and Net Zero (DESNZ)</li>
+                </ul>
+                <p style="margin-top: 8px;"><strong>Method:</strong> EU monthly generation shares (%) for Solar, Wind, Hydro, Bioenergy, Other renewables, Nuclear, Gas, Coal, and Other fossil.</p>
+            </div>
+        </footer>
+    </div>
+
+    <script src="energy_europe.js"></script>
+</body>
+</html>

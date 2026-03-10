@@ -1,10 +1,73 @@
 let energyTradeChart = null;
 let importsWeightsChart = null;
+let petrochemEurozoneChart = null;
+let petrochemCountriesChart = null;
 let usImportsChart = null;
 let italyImportsChart = null;
+let germanyImportsChart = null;
+let franceImportsChart = null;
+let spainImportsChart = null;
+let belgiumImportsChart = null;
 
 const API_BASE = 'http://localhost:5001';
 const EUROSTAT_BASE = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ext_st_eu27_2020sitc';
+const BRENT_LINE_COLOR = '#7C3AED';
+const BRENT_FILL_COLOR = '#7C3AED22';
+const BRENT_YAHOO_ANNUAL_FALLBACK = {
+    2007: 84.92,
+    2008: 93.85,
+    2009: 66.25,
+    2010: 81.14,
+    2011: 111.88,
+    2012: 111.47,
+    2013: 108.21,
+    2014: 96.18,
+    2015: 54.50,
+    2016: 45.60,
+    2017: 55.11,
+    2018: 71.02,
+    2019: 64.84,
+    2020: 42.92,
+    2021: 71.38,
+    2022: 98.63,
+    2023: 81.84,
+    2024: 81.43,
+    2025: 68.04,
+};
+
+let brentAnnualMapPromise = null;
+
+async function getBrentAnnualMap() {
+    if (brentAnnualMapPromise) return brentAnnualMapPromise;
+
+    brentAnnualMapPromise = (async () => {
+        try {
+            const response = await fetch(`${API_BASE}/api/brent-oil-annual`);
+            if (response.ok) {
+                const payload = await response.json();
+                const map = new Map();
+                (payload.points || []).forEach(point => {
+                    const year = Number(point.year);
+                    const value = Number(point.brent_usd_per_barrel);
+                    if (Number.isFinite(year) && Number.isFinite(value)) {
+                        map.set(year, value);
+                    }
+                });
+                if (map.size) return map;
+            }
+        } catch (error) {
+            console.warn('Brent API unavailable, using local fallback values.', error);
+        }
+
+        return new Map(
+            Object.entries(BRENT_YAHOO_ANNUAL_FALLBACK)
+                .map(([year, value]) => [Number(year), Number(value)])
+                .filter(([year, value]) => Number.isFinite(year) && Number.isFinite(value))
+        );
+    })();
+
+    return brentAnnualMapPromise;
+}
 
 function drawWrappedCenteredText(ctx, text, centerX, startY, maxWidth, lineHeight) {
     const words = String(text || '').split(/\s+/).filter(Boolean);
@@ -101,10 +164,26 @@ function setupDownloadButtons() {
         });
     }
 
+    const petrochemEurozoneBtn = document.getElementById('downloadPetrochemEurozoneBtn');
+    if (petrochemEurozoneBtn) {
+        petrochemEurozoneBtn.addEventListener('click', () => {
+            const title = (document.getElementById('petrochemEurozoneTitle') || {}).textContent || 'Petrochemicals imports - Eurozone';
+            downloadChartPng(petrochemEurozoneChart, title, 'petrochem_imports_eurozone');
+        });
+    }
+
+    const petrochemCountriesBtn = document.getElementById('downloadPetrochemCountriesBtn');
+    if (petrochemCountriesBtn) {
+        petrochemCountriesBtn.addEventListener('click', () => {
+            const title = (document.getElementById('petrochemCountriesTitle') || {}).textContent || 'Petrochemicals imports - countries';
+            downloadChartPng(petrochemCountriesChart, title, 'petrochem_imports_countries');
+        });
+    }
+
     const usBtn = document.getElementById('downloadUsChartBtn');
     if (usBtn) {
         usBtn.addEventListener('click', () => {
-            const title = (document.getElementById('usFuelTitle') || {}).textContent || 'United States oil and gas net trade';
+            const title = (document.getElementById('usFuelTitle') || {}).textContent || 'United States oil and gas net exports';
             downloadChartPng(usImportsChart, title, 'us_oil_gas_net_trade');
         });
     }
@@ -114,6 +193,38 @@ function setupDownloadButtons() {
         italyBtn.addEventListener('click', () => {
             const title = (document.getElementById('italyFuelTitle') || {}).textContent || 'Italy import composition';
             downloadChartPng(italyImportsChart, title, 'italy_import_composition');
+        });
+    }
+
+    const germanyBtn = document.getElementById('downloadGermanyChartBtn');
+    if (germanyBtn) {
+        germanyBtn.addEventListener('click', () => {
+            const title = (document.getElementById('germanyFuelTitle') || {}).textContent || 'Germany import composition';
+            downloadChartPng(germanyImportsChart, title, 'germany_import_composition');
+        });
+    }
+
+    const franceBtn = document.getElementById('downloadFranceChartBtn');
+    if (franceBtn) {
+        franceBtn.addEventListener('click', () => {
+            const title = (document.getElementById('franceFuelTitle') || {}).textContent || 'France import composition';
+            downloadChartPng(franceImportsChart, title, 'france_import_composition');
+        });
+    }
+
+    const spainBtn = document.getElementById('downloadSpainChartBtn');
+    if (spainBtn) {
+        spainBtn.addEventListener('click', () => {
+            const title = (document.getElementById('spainFuelTitle') || {}).textContent || 'Spain import composition';
+            downloadChartPng(spainImportsChart, title, 'spain_import_composition');
+        });
+    }
+
+    const belgiumBtn = document.getElementById('downloadBelgiumChartBtn');
+    if (belgiumBtn) {
+        belgiumBtn.addEventListener('click', () => {
+            const title = (document.getElementById('belgiumFuelTitle') || {}).textContent || 'Belgium import composition';
+            downloadChartPng(belgiumImportsChart, title, 'belgium_import_composition');
         });
     }
 }
@@ -403,6 +514,19 @@ async function fetchCensusHsAnnualSum({ flow, valueField, year, commodityCode = 
     return total;
 }
 
+async function fetchJsonWithTimeout(url, timeoutMs = 30000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Server error ${response.status}`);
+        return await response.json();
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 async function buildUsRealEnergyFromCensus(startYear = 2002, endYear = (new Date().getFullYear() - 1)) {
     const years = [];
     for (let year = startYear; year <= endYear; year += 1) years.push(year);
@@ -507,14 +631,13 @@ async function buildUsProxyFallbackFromWorldBank() {
     };
 }
 
-async function buildNetImportsWeightsPayloadFromEurostat(existingPeriods = []) {
+async function buildImportsWeightsPayloadFromEurostat(existingPeriods = []) {
     const codes = ['TOTAL', 'SITC3', 'SITC33', 'SITC0_1', 'SITC2', 'SITC5', 'SITC7', 'SITC6_8'];
     const maps = {};
 
-    await Promise.all(codes.flatMap(code => [
-        fetchQuarterlyTradeValueByFlow(code, 'IMP').then(map => { maps[`${code}_IMP`] = map; }),
-        fetchQuarterlyTradeValueByFlow(code, 'EXP').then(map => { maps[`${code}_EXP`] = map; })
-    ]));
+    await Promise.all(codes.map(code =>
+        fetchQuarterlyTradeValueByFlow(code, 'IMP').then(map => { maps[`${code}_IMP`] = map; })
+    ));
 
     const periodSet = new Set(existingPeriods.map(String));
     Object.values(maps).forEach(map => {
@@ -528,44 +651,30 @@ async function buildNetImportsWeightsPayloadFromEurostat(existingPeriods = []) {
         return ay - by || aq - bq;
     });
 
-    const getNet = (code, period) => {
+    const getImports = (code, period) => {
         const imp = maps[`${code}_IMP`]?.get(period);
-        const exp = maps[`${code}_EXP`]?.get(period);
-        if (imp == null && exp == null) return null;
-        return Number(imp || 0) - Number(exp || 0);
+        if (imp == null) return null;
+        return Number(imp);
     };
 
     const points = periods.map(period => {
-        const totalNet = getNet('TOTAL', period);
-        const energyNet = getNet('SITC3', period);
-        const oilNet = getNet('SITC33', period);
-        const gasesNet = (energyNet != null && oilNet != null) ? (energyNet - oilNet) : null;
+        const totalImports = getImports('TOTAL', period);
+        const energyImports = getImports('SITC3', period);
+        const oilImports = getImports('SITC33', period);
+        const gasesImports = (energyImports != null && oilImports != null) ? (energyImports - oilImports) : null;
 
-        const foodNet = getNet('SITC0_1', period);
-        const rawNet = getNet('SITC2', period);
-        const chemNet = getNet('SITC5', period);
-        const machNet = getNet('SITC7', period);
-        const manufTotalNet = getNet('SITC6_8', period);
-        const otherManufNet = (manufTotalNet != null && machNet != null) ? (manufTotalNet - machNet) : null;
-
-        const known = [oilNet, gasesNet, foodNet, rawNet, chemNet, machNet, otherManufNet];
-        const knownSum = known.filter(v => v != null).reduce((sum, v) => sum + Number(v), 0);
-        const otherGoodsNet = totalNet != null ? (Number(totalNet) - knownSum) : null;
-
-        const components = [oilNet, gasesNet, foodNet, rawNet, chemNet, machNet, otherManufNet, otherGoodsNet];
-        const positiveBase = components.filter(v => v != null).reduce((sum, v) => sum + Math.max(Number(v), 0), 0);
-
-        const oilPositive = oilNet == null ? null : Math.max(Number(oilNet), 0);
-        const gasesPositive = gasesNet == null ? null : Math.max(Number(gasesNet), 0);
+        const oilWeight = (totalImports != null && totalImports > 0 && oilImports != null)
+            ? (oilImports / totalImports) * 100
+            : null;
+        const gasesWeight = (totalImports != null && totalImports > 0 && gasesImports != null)
+            ? (gasesImports / totalImports) * 100
+            : null;
 
         return {
             period,
-            total_net_imports_million_eur: positiveBase > 0 ? positiveBase : null,
-            total_balance_million_eur: totalNet,
-            oil_net_imports_million_eur: oilNet,
-            gases_net_imports_million_eur: gasesNet,
-            oil_weight_pct_of_total_net_imports: (positiveBase > 0 && oilPositive != null) ? (oilPositive / positiveBase) * 100 : null,
-            gases_weight_pct_of_total_net_imports: (positiveBase > 0 && gasesPositive != null) ? (gasesPositive / positiveBase) * 100 : null,
+            total_imports_million_eur: totalImports,
+            oil_weight_pct_of_total_imports: oilWeight,
+            gases_weight_pct_of_total_imports: gasesWeight,
         };
     });
 
@@ -587,23 +696,23 @@ function normalizeImportsWeightsPayload(rawPayload) {
             const period = item && item.period != null ? String(item.period) : null;
             if (!period) return null;
 
-            const totalNet = item.total_net_imports_million_eur != null
-                ? Number(item.total_net_imports_million_eur)
-                : (item.total_imports_million_eur != null ? Number(item.total_imports_million_eur) : null);
+            const totalImports = item.total_imports_million_eur != null
+                ? Number(item.total_imports_million_eur)
+                : (item.total_net_imports_million_eur != null ? Number(item.total_net_imports_million_eur) : null);
 
-            const oilWeight = item.oil_weight_pct_of_total_net_imports != null
-                ? Number(item.oil_weight_pct_of_total_net_imports)
-                : (item.oil_weight_pct_of_total_imports != null ? Number(item.oil_weight_pct_of_total_imports) : null);
+            const oilWeight = item.oil_weight_pct_of_total_imports != null
+                ? Number(item.oil_weight_pct_of_total_imports)
+                : (item.oil_weight_pct_of_total_net_imports != null ? Number(item.oil_weight_pct_of_total_net_imports) : null);
 
-            const gasWeight = item.gases_weight_pct_of_total_net_imports != null
-                ? Number(item.gases_weight_pct_of_total_net_imports)
-                : (item.gases_weight_pct_of_total_imports != null ? Number(item.gases_weight_pct_of_total_imports) : null);
+            const gasWeight = item.gases_weight_pct_of_total_imports != null
+                ? Number(item.gases_weight_pct_of_total_imports)
+                : (item.gases_weight_pct_of_total_net_imports != null ? Number(item.gases_weight_pct_of_total_net_imports) : null);
 
             return {
                 period,
-                total_net_imports_million_eur: totalNet,
-                oil_weight_pct_of_total_net_imports: oilWeight,
-                gases_weight_pct_of_total_net_imports: gasWeight,
+                total_imports_million_eur: totalImports,
+                oil_weight_pct_of_total_imports: oilWeight,
+                gases_weight_pct_of_total_imports: gasWeight,
                 total_balance_million_eur: item.total_balance_million_eur != null ? Number(item.total_balance_million_eur) : null,
             };
         })
@@ -842,7 +951,7 @@ function renderEnergyTradeChart(payload) {
                 x: {
                     title: {
                         display: true,
-                        text: 'Quarter'
+                        text: 'Year'
                     },
                     grid: {
                         display: false
@@ -932,20 +1041,23 @@ function renderImportsWeightsChart(payload) {
 
         if (!yearlyBuckets.has(year)) {
             yearlyBuckets.set(year, {
-                totalNet: 0,
+                totalImports: 0,
                 oilAmount: 0,
                 gasAmount: 0,
+                brentSum: 0,
+                brentCount: 0,
                 hasTotal: false,
             });
         }
 
         const bucket = yearlyBuckets.get(year);
-        const total = Number(point.total_net_imports_million_eur);
-        const oilPct = Number(point.oil_weight_pct_of_total_net_imports);
-        const gasPct = Number(point.gases_weight_pct_of_total_net_imports);
+        const total = Number(point.total_imports_million_eur);
+        const oilPct = Number(point.oil_weight_pct_of_total_imports);
+        const gasPct = Number(point.gases_weight_pct_of_total_imports);
+        const brent = Number(point.brent_usd_per_barrel);
 
         if (Number.isFinite(total)) {
-            bucket.totalNet += total;
+            bucket.totalImports += total;
             bucket.hasTotal = true;
 
             if (Number.isFinite(oilPct)) {
@@ -955,19 +1067,25 @@ function renderImportsWeightsChart(payload) {
                 bucket.gasAmount += total * (gasPct / 100);
             }
         }
+
+        if (Number.isFinite(brent)) {
+            bucket.brentSum += brent;
+            bucket.brentCount += 1;
+        }
     });
 
     const yearlyPoints = [...yearlyBuckets.entries()]
         .sort((a, b) => a[0] - b[0])
         .map(([year, bucket]) => {
-            const total = bucket.hasTotal ? bucket.totalNet : null;
+            const total = bucket.hasTotal ? bucket.totalImports : null;
             const oilPct = (total && total > 0) ? (bucket.oilAmount / total) * 100 : null;
             const gasPct = (total && total > 0) ? (bucket.gasAmount / total) * 100 : null;
             return {
                 period: String(year),
-                total_net_imports_million_eur: total,
-                oil_weight_pct_of_total_net_imports: oilPct,
-                gases_weight_pct_of_total_net_imports: gasPct,
+                total_imports_million_eur: total,
+                oil_weight_pct_of_total_imports: oilPct,
+                gases_weight_pct_of_total_imports: gasPct,
+                brent_usd_per_barrel: bucket.brentCount > 0 ? (bucket.brentSum / bucket.brentCount) : null,
             };
         });
 
@@ -976,9 +1094,10 @@ function renderImportsWeightsChart(payload) {
     }
 
     const labels = yearlyPoints.map(item => String(item.period));
-    const totalNetImportsBn = yearlyPoints.map(item => item.total_net_imports_million_eur == null ? null : Number(item.total_net_imports_million_eur) / 1000);
-    const oilWeightPct = yearlyPoints.map(item => item.oil_weight_pct_of_total_net_imports == null ? null : Number(item.oil_weight_pct_of_total_net_imports));
-    const gasesWeightPct = yearlyPoints.map(item => item.gases_weight_pct_of_total_net_imports == null ? null : Number(item.gases_weight_pct_of_total_net_imports));
+    const totalImportsBn = yearlyPoints.map(item => item.total_imports_million_eur == null ? null : Number(item.total_imports_million_eur) / 1000);
+    const oilWeightPct = yearlyPoints.map(item => item.oil_weight_pct_of_total_imports == null ? null : Number(item.oil_weight_pct_of_total_imports));
+    const gasesWeightPct = yearlyPoints.map(item => item.gases_weight_pct_of_total_imports == null ? null : Number(item.gases_weight_pct_of_total_imports));
+    const brentRaw = yearlyPoints.map(item => item.brent_usd_per_barrel == null ? null : Number(item.brent_usd_per_barrel));
     const otherWeightPct = oilWeightPct.map((oil, idx) => {
         const gas = gasesWeightPct[idx];
         if (oil == null || gas == null) return null;
@@ -989,7 +1108,7 @@ function renderImportsWeightsChart(payload) {
     const datasets = [
         {
             type: 'bar',
-            label: 'Oil weight in total net imports (%)',
+            label: 'Oil share in total imports (%)',
             data: oilWeightPct,
             backgroundColor: '#1D4ED8CC',
             borderColor: '#1D4ED8',
@@ -999,7 +1118,7 @@ function renderImportsWeightsChart(payload) {
         },
         {
             type: 'bar',
-            label: 'Gases weight in total net imports (%)',
+            label: 'Gases share in total imports (%)',
             data: gasesWeightPct,
             backgroundColor: '#60A5FACC',
             borderColor: '#60A5FA',
@@ -1016,6 +1135,20 @@ function renderImportsWeightsChart(payload) {
             borderWidth: 1,
             stack: 'weights',
             order: 2
+        },
+        {
+            type: 'line',
+            label: 'Brent oil (USD/bbl)',
+            data: brentRaw,
+            borderColor: '#111827',
+            backgroundColor: '#11182722',
+            borderWidth: 2.2,
+            pointRadius: 1.6,
+            tension: 0.15,
+            spanGaps: true,
+            fill: false,
+            yAxisID: 'yBrent',
+            order: 0
         }
     ];
 
@@ -1051,13 +1184,23 @@ function renderImportsWeightsChart(payload) {
                     max: 100,
                     title: {
                         display: true,
-                        text: 'Share of total net imports (%)'
+                        text: 'Share of total imports (%)'
                     },
                     ticks: {
                         callback: value => `${Number(value).toFixed(0)}%`
                     },
                     grid: {
                         color: '#D1D5DB'
+                    }
+                },
+                yBrent: {
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Brent oil (USD/bbl)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
                     }
                 }
             },
@@ -1071,13 +1214,16 @@ function renderImportsWeightsChart(payload) {
                         label: function (context) {
                             const value = context.parsed.y;
                             if (value == null) return `${context.dataset.label}: N/A`;
+                            if (context.dataset.yAxisID === 'yBrent') {
+                                return `${context.dataset.label}: ${Number(value).toFixed(2)}`;
+                            }
                             return `${context.dataset.label}: ${Number(value).toFixed(2)}%`;
                         },
                         afterBody: function (tooltipItems) {
                             const idx = tooltipItems && tooltipItems.length ? tooltipItems[0].dataIndex : -1;
                             if (idx < 0) return [];
-                            const total = totalNetImportsBn[idx];
-                            return [total == null ? 'Total net imports: N/A' : `Total net imports: ${formatBillions(total)}`];
+                            const total = totalImportsBn[idx];
+                            return [total == null ? 'Total imports: N/A' : `Total imports: ${formatBillions(total)}`];
                         }
                     }
                 }
@@ -1089,8 +1235,204 @@ function renderImportsWeightsChart(payload) {
     if (titleElement) {
         const startYear = labels.length ? labels[0] : (normalized.start_year || 'N/A');
         const endYear = labels.length ? labels[labels.length - 1] : (normalized.end_year || 'N/A');
-        titleElement.textContent = `Eurozone net-import composition bar (oil and gases weights in total net imports) (${startYear}→${endYear})`;
+        titleElement.textContent = `Eurozone import composition bar (oil and gases shares in total imports) (${startYear}→${endYear})`;
     }
+}
+
+function petrochemScale(values) {
+    const filtered = (values || []).filter(v => Number.isFinite(v));
+    const maxAbs = filtered.length ? Math.max(...filtered.map(v => Math.abs(v))) : 0;
+    const divisor = maxAbs >= 1e9 ? 1e9 : (maxAbs >= 1e6 ? 1e6 : 1);
+    const suffix = divisor === 1e9 ? 'bn EUR' : (divisor === 1e6 ? 'mn EUR' : 'EUR');
+    return { divisor, suffix };
+}
+
+function renderPetrochemEurozoneChart(points) {
+    const canvas = document.getElementById('petrochemEurozoneChart');
+    if (!canvas) return;
+    const rows = Array.isArray(points) ? points : [];
+    if (!rows.length) throw new Error('No Eurozone petrochemicals imports data points available.');
+
+    const labels = rows.map(item => String(item.period));
+    const eurozoneRaw = rows.map(item => item.eurozone_imports_eur == null ? null : Number(item.eurozone_imports_eur));
+    const brentRaw = rows.map(item => item.brent_usd_per_barrel == null ? null : Number(item.brent_usd_per_barrel));
+
+    const { divisor, suffix } = petrochemScale(eurozoneRaw);
+    const eurozoneScaled = eurozoneRaw.map(v => (v == null ? null : v / divisor));
+
+    if (petrochemEurozoneChart) petrochemEurozoneChart.destroy();
+
+    petrochemEurozoneChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: `Eurozone imports (${suffix})`,
+                    data: eurozoneScaled,
+                    borderColor: '#7C3AED',
+                    backgroundColor: '#7C3AED22',
+                    borderWidth: 2.5,
+                    pointRadius: 1.8,
+                    tension: 0.15,
+                    spanGaps: true,
+                    fill: false,
+                },
+                {
+                    label: 'Brent oil (USD/bbl)',
+                    data: brentRaw,
+                    borderColor: BRENT_LINE_COLOR,
+                    backgroundColor: BRENT_FILL_COLOR,
+                    borderWidth: 2.2,
+                    pointRadius: 1.6,
+                    tension: 0.15,
+                    spanGaps: true,
+                    fill: false,
+                    yAxisID: 'y1',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Quarter'
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: `Value (${suffix})`
+                    },
+                    ticks: {
+                        callback: value => Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })
+                    },
+                    grid: {
+                        color: '#D1D5DB'
+                    }
+                },
+                y1: {
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Brent oil (USD/bbl)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const scaled = context.parsed.y;
+                            if (scaled == null) return `${context.dataset.label}: N/A`;
+                            if (context.dataset.yAxisID === 'y1') {
+                                return `${context.dataset.label}: ${Number(scaled).toFixed(2)}`;
+                            }
+                            const raw = scaled * divisor;
+                            return `${context.dataset.label}: ${Number(scaled).toLocaleString('en-US', { maximumFractionDigits: 2 })} (${Number(raw).toLocaleString('en-US', { maximumFractionDigits: 0 })} EUR raw)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    const titleElement = document.getElementById('petrochemEurozoneTitle');
+    if (titleElement) titleElement.textContent = 'Petrochemicals imports - Eurozone';
+}
+
+function renderPetrochemCountriesChart(points) {
+    const canvas = document.getElementById('petrochemCountriesChart');
+    if (!canvas) return;
+    const rows = Array.isArray(points) ? points : [];
+    if (!rows.length) throw new Error('No country petrochemicals imports data points available.');
+
+    const labels = rows.map(item => String(item.period));
+    const franceRaw = rows.map(item => item.france_imports_eur == null ? null : Number(item.france_imports_eur));
+    const germanyRaw = rows.map(item => item.germany_imports_eur == null ? null : Number(item.germany_imports_eur));
+    const belgiumRaw = rows.map(item => item.belgium_imports_eur == null ? null : Number(item.belgium_imports_eur));
+    const italyRaw = rows.map(item => item.italy_imports_eur == null ? null : Number(item.italy_imports_eur));
+    const spainRaw = rows.map(item => item.spain_imports_eur == null ? null : Number(item.spain_imports_eur));
+    const brentRaw = rows.map(item => item.brent_usd_per_barrel == null ? null : Number(item.brent_usd_per_barrel));
+
+    const { divisor, suffix } = petrochemScale([
+        ...franceRaw,
+        ...germanyRaw,
+        ...belgiumRaw,
+        ...italyRaw,
+        ...spainRaw,
+    ]);
+
+    const scale = series => series.map(v => (v == null ? null : v / divisor));
+
+    if (petrochemCountriesChart) petrochemCountriesChart.destroy();
+
+    petrochemCountriesChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: `France imports (${suffix})`, data: scale(franceRaw), borderColor: '#1D4ED8', backgroundColor: '#1D4ED822', borderWidth: 2.2, pointRadius: 1.6, tension: 0.15, spanGaps: true, fill: false },
+                { label: `Germany imports (${suffix})`, data: scale(germanyRaw), borderColor: '#059669', backgroundColor: '#05966922', borderWidth: 2.2, pointRadius: 1.6, tension: 0.15, spanGaps: true, fill: false },
+                { label: `Belgium imports (${suffix})`, data: scale(belgiumRaw), borderColor: '#EA580C', backgroundColor: '#EA580C22', borderWidth: 2.2, pointRadius: 1.6, tension: 0.15, spanGaps: true, fill: false },
+                { label: `Italy imports (${suffix})`, data: scale(italyRaw), borderColor: '#A855F7', backgroundColor: '#A855F722', borderWidth: 2.2, pointRadius: 1.6, tension: 0.15, spanGaps: true, fill: false },
+                { label: `Spain imports (${suffix})`, data: scale(spainRaw), borderColor: '#7C2D12', backgroundColor: '#7C2D1222', borderWidth: 2.2, pointRadius: 1.6, tension: 0.15, spanGaps: true, fill: false },
+                { label: 'Brent oil (USD/bbl)', data: brentRaw, borderColor: BRENT_LINE_COLOR, backgroundColor: BRENT_FILL_COLOR, borderWidth: 2.2, pointRadius: 1.6, tension: 0.15, spanGaps: true, fill: false, yAxisID: 'y1' },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { title: { display: true, text: 'Year' }, grid: { display: false } },
+                y: {
+                    title: { display: true, text: `Value (${suffix})` },
+                    ticks: { callback: value => Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 }) },
+                    grid: { color: '#D1D5DB' }
+                },
+                y1: {
+                    position: 'right',
+                    title: { display: true, text: 'Brent oil (USD/bbl)' },
+                    grid: { drawOnChartArea: false }
+                }
+            },
+            plugins: {
+                legend: { display: true, position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const scaled = context.parsed.y;
+                            if (scaled == null) return `${context.dataset.label}: N/A`;
+                            if (context.dataset.yAxisID === 'y1') return `${context.dataset.label}: ${Number(scaled).toFixed(2)}`;
+                            const raw = scaled * divisor;
+                            return `${context.dataset.label}: ${Number(scaled).toLocaleString('en-US', { maximumFractionDigits: 2 })} (${Number(raw).toLocaleString('en-US', { maximumFractionDigits: 0 })} EUR raw)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    const titleElement = document.getElementById('petrochemCountriesTitle');
+    if (titleElement) titleElement.textContent = 'Petrochemicals imports - Countries';
 }
 
 function renderCountryFuelProxyChart(countryPayload, chartConfig) {
@@ -1132,8 +1474,8 @@ function renderCountryFuelProxyChart(countryPayload, chartConfig) {
             type: 'line',
             label: 'Total imports (bn USD)',
             data: importsBn,
-            borderColor: chartConfig.colors.line,
-            backgroundColor: `${chartConfig.colors.line}22`,
+            borderColor: '#111111',
+            backgroundColor: '#11111122',
             borderWidth: 2,
             pointRadius: 1.2,
             tension: 0.1,
@@ -1235,16 +1577,17 @@ function renderUsRealChart(payload) {
 
     const points = Array.isArray(payload && payload.points) ? payload.points : [];
     if (!points.length) {
-        throw new Error('No real U.S. data points available for net-trade chart.');
+        throw new Error('No real U.S. data points available for net-exports chart.');
     }
 
     const labels = points.map(point => String(point.year));
-    const oilNetTradeBn = points.map(point => point.oil_net_imports_usd == null ? null : Number(point.oil_net_imports_usd) / 1e9);
-    const gasNetTradeBn = points.map(point => point.gas_net_imports_usd == null ? null : Number(point.gas_net_imports_usd) / 1e9);
+    const oilNetExportsBn = points.map(point => point.oil_net_imports_usd == null ? null : -Number(point.oil_net_imports_usd) / 1e9);
+    const gasNetExportsBn = points.map(point => point.gas_net_imports_usd == null ? null : -Number(point.gas_net_imports_usd) / 1e9);
+    const brentRaw = points.map(point => point.brent_usd_per_barrel == null ? null : Number(point.brent_usd_per_barrel));
 
-    const hasAnySeries = [...oilNetTradeBn, ...gasNetTradeBn].some(value => value != null && Number.isFinite(Number(value)));
+    const hasAnySeries = [...oilNetExportsBn, ...gasNetExportsBn].some(value => value != null && Number.isFinite(Number(value)));
     if (!hasAnySeries) {
-        throw new Error('U.S. net-trade payload has no usable oil/gas values.');
+        throw new Error('U.S. net-exports payload has no usable oil/gas values.');
     }
 
     if (usImportsChart) {
@@ -1257,8 +1600,8 @@ function renderUsRealChart(payload) {
             datasets: [
                 {
                     type: 'line',
-                    label: 'Oil net trade (bn USD)',
-                    data: oilNetTradeBn,
+                    label: 'Oil net exports (bn USD)',
+                    data: oilNetExportsBn,
                     borderColor: '#1D4ED8',
                     backgroundColor: '#1D4ED822',
                     borderWidth: 2.5,
@@ -1270,8 +1613,8 @@ function renderUsRealChart(payload) {
                 },
                 {
                     type: 'line',
-                    label: 'Gas net trade (bn USD)',
-                    data: gasNetTradeBn,
+                    label: 'Gas net exports (bn USD)',
+                    data: gasNetExportsBn,
                     borderColor: '#60A5FA',
                     backgroundColor: '#60A5FA22',
                     borderWidth: 2.5,
@@ -1280,6 +1623,20 @@ function renderUsRealChart(payload) {
                     spanGaps: true,
                     fill: false,
                     order: 1
+                },
+                {
+                    type: 'line',
+                    label: 'Brent oil (USD/bbl)',
+                    data: brentRaw,
+                    borderColor: BRENT_LINE_COLOR,
+                    backgroundColor: BRENT_FILL_COLOR,
+                    borderWidth: 2.2,
+                    pointRadius: 1.8,
+                    tension: 0.15,
+                    spanGaps: true,
+                    fill: false,
+                    yAxisID: 'y1',
+                    order: 0
                 }
             ]
         },
@@ -1303,13 +1660,26 @@ function renderUsRealChart(payload) {
                 y: {
                     title: {
                         display: true,
-                        text: 'Net trade (bn USD, imports − exports)'
+                        text: 'Net exports (bn USD, exports − imports)'
                     },
                     ticks: {
                         callback: value => `${Number(value).toFixed(0)} bn`
                     },
                     grid: {
                         color: '#D1D5DB'
+                    }
+                },
+                y1: {
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Brent oil (USD/bbl)'
+                    },
+                    ticks: {
+                        callback: value => `$${Number(value).toFixed(0)}`
+                    },
+                    grid: {
+                        drawOnChartArea: false
                     }
                 }
             },
@@ -1323,6 +1693,9 @@ function renderUsRealChart(payload) {
                         label: function (context) {
                             const value = context.parsed.y;
                             if (value == null) return `${context.dataset.label}: N/A`;
+                            if (context.dataset.yAxisID === 'y1') {
+                                return `${context.dataset.label}: ${Number(value).toFixed(2)}`;
+                            }
                             return `${context.dataset.label}: ${Number(value).toFixed(2)} bn USD`;
                         }
                     }
@@ -1333,60 +1706,280 @@ function renderUsRealChart(payload) {
 
     const titleElement = document.getElementById('usFuelTitle');
     if (titleElement) {
-        titleElement.textContent = `United States oil and gas net trade (real data) (${payload.start_year || 'N/A'}→${payload.end_year || 'N/A'})`;
+        titleElement.textContent = `United States oil and gas net exports (real data) (${payload.start_year || 'N/A'}→${payload.end_year || 'N/A'})`;
     }
 }
 
-function renderUsItalyFuelProxyChart(payload) {
-    const countries = Array.isArray(payload && payload.countries) ? payload.countries : [];
-    if (!countries.length) {
-        throw new Error('No country data available for US/Italy imports charts.');
+function renderCountryRealFuelChart(payload, chartConfig) {
+    const canvas = document.getElementById(chartConfig.canvasId);
+    if (!canvas) return;
+
+    const points = Array.isArray(payload && payload.points) ? payload.points : [];
+    if (!points.length) {
+        throw new Error(`No real ${chartConfig.countryLabel} data points available for imports chart.`);
     }
 
-    const italy = countries.find(item => String(item.country_code || '').toUpperCase() === 'ITA');
+    const labels = points.map(point => String(point.year));
+    const totalImportsBnEur = points.map(point => point.total_imports_million_eur == null ? null : Number(point.total_imports_million_eur) / 1000);
+    const oilShare = points.map(point => point.oil_share_pct == null ? null : Number(point.oil_share_pct));
+    const gasShare = points.map(point => point.gas_share_pct == null ? null : Number(point.gas_share_pct));
+    const fuelShare = points.map(point => point.fuel_share_pct == null ? null : Number(point.fuel_share_pct));
+    const otherShare = points.map(point => point.other_share_pct == null ? null : Number(point.other_share_pct));
+    const brentRaw = points.map(point => point.brent_usd_per_barrel == null ? null : Number(point.brent_usd_per_barrel));
+    const hasOilGasSplit = points.some(point => point.oil_share_pct != null || point.gas_share_pct != null);
+    const hasEstimatedSplit = points.some(point => String(point.oil_gas_split_method || '').includes('estimated'));
 
-    if (!italy) {
-        throw new Error('Italy series is missing from payload.');
+    const hasAnySeries = [...oilShare, ...gasShare, ...fuelShare, ...totalImportsBnEur]
+        .some(value => value != null && Number.isFinite(Number(value)));
+    if (!hasAnySeries) {
+        throw new Error(`No usable import-share values available for ${chartConfig.countryLabel}.`);
     }
 
-    if (italy) {
-        italyImportsChart = renderCountryFuelProxyChart(italy, {
-            canvasId: 'italyImportsChart',
-            titleId: 'italyFuelTitle',
-            countryLabel: 'Italy',
-            startYear: payload.start_year,
-            endYear: payload.end_year,
-            colors: { fuel: '#B45309CC', other: '#FCD9B6CC', line: '#92400E' },
-            getChart: () => italyImportsChart,
-        });
+    const shareDatasets = hasOilGasSplit
+        ? [
+            {
+                type: 'bar',
+                label: 'Oil weight (%)',
+                data: oilShare,
+                backgroundColor: '#B45309CC',
+                borderColor: '#92400E',
+                borderWidth: 1,
+                stack: 'weights',
+                order: 2
+            },
+            {
+                type: 'bar',
+                label: 'Gas weight (%)',
+                data: gasShare,
+                backgroundColor: '#F59E0BCC',
+                borderColor: '#B45309',
+                borderWidth: 1,
+                stack: 'weights',
+                order: 2
+            },
+            {
+                type: 'bar',
+                label: 'Other sections weight (%)',
+                data: otherShare,
+                backgroundColor: '#FCD9B6CC',
+                borderColor: '#FDBA74',
+                borderWidth: 1,
+                stack: 'weights',
+                order: 2
+            }
+        ]
+        : [
+            {
+                type: 'bar',
+                label: 'Fuel weight (%)',
+                data: fuelShare,
+                backgroundColor: '#B45309CC',
+                borderColor: '#92400E',
+                borderWidth: 1,
+                stack: 'weights',
+                order: 2
+            },
+            {
+                type: 'bar',
+                label: 'Other sections weight (%)',
+                data: otherShare,
+                backgroundColor: '#FCD9B6CC',
+                borderColor: '#FDBA74',
+                borderWidth: 1,
+                stack: 'weights',
+                order: 2
+            }
+        ];
+
+    const existingChart = chartConfig.getChart();
+    if (existingChart) {
+        existingChart.destroy();
+    }
+
+    const chartInstance = new Chart(canvas.getContext('2d'), {
+        data: {
+            labels,
+            datasets: [
+                ...shareDatasets,
+                {
+                    type: 'line',
+                    label: 'Total imports (bn EUR)',
+                    data: totalImportsBnEur,
+                    borderColor: '#111111',
+                    backgroundColor: '#11111122',
+                    borderWidth: 2,
+                    pointRadius: 1.2,
+                    tension: 0.1,
+                    spanGaps: true,
+                    fill: false,
+                    yAxisID: 'yRight',
+                    order: 0
+                },
+                {
+                    type: 'line',
+                    label: 'Brent oil (USD/bbl)',
+                    data: brentRaw,
+                    borderColor: BRENT_LINE_COLOR,
+                    backgroundColor: BRENT_FILL_COLOR,
+                    borderWidth: 2.1,
+                    pointRadius: 1.4,
+                    tension: 0.15,
+                    spanGaps: true,
+                    fill: false,
+                    yAxisID: 'yBrent',
+                    order: 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Year'
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    stacked: true,
+                    min: 0,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Share in total imports (%)'
+                    },
+                    ticks: {
+                        callback: value => `${Number(value).toFixed(0)}%`
+                    },
+                    grid: {
+                        color: '#D1D5DB'
+                    }
+                },
+                yRight: {
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Total imports (bn EUR)'
+                    },
+                    ticks: {
+                        callback: value => `${Number(value).toFixed(0)} bn`
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                },
+                yBrent: {
+                    position: 'right',
+                    offset: true,
+                    title: {
+                        display: true,
+                        text: 'Brent oil (USD/bbl)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const value = context.parsed.y;
+                            if (value == null) return `${context.dataset.label}: N/A`;
+                            if (context.dataset.yAxisID === 'yRight') {
+                                return `${context.dataset.label}: ${Number(value).toFixed(2)} bn EUR`;
+                            }
+                            if (context.dataset.yAxisID === 'yBrent') {
+                                return `${context.dataset.label}: ${Number(value).toFixed(2)}`;
+                            }
+                            return `${context.dataset.label}: ${Number(value).toFixed(2)}%`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    chartConfig.setChart(chartInstance);
+
+    const titleElement = document.getElementById(chartConfig.titleId);
+    if (titleElement) {
+        const splitSuffix = hasEstimatedSplit ? ' · oil/gas split estimated from Eurozone mix' : '';
+        titleElement.textContent = `${chartConfig.countryLabel} import composition bar (oil and gases shares in total imports) (${payload.start_year || 'N/A'}→${payload.end_year || 'N/A'})${splitSuffix}`;
     }
 }
 
 async function fetchAndRenderUsRealEnergy() {
     let payload = null;
     const currentYear = new Date().getFullYear();
-    const startYear = Math.max(2014, currentYear - 10);
+    const startYear = Math.max(2019, currentYear - 6);
     const endYear = currentYear - 1;
     const titleElement = document.getElementById('usFuelTitle');
     if (titleElement) {
-        titleElement.textContent = 'United States oil and gas net trade (real data) — loading… this can take up to ~1 minute';
+        titleElement.textContent = 'United States oil and gas net exports (real data) — loading… this can take up to ~1 minute';
     }
 
     try {
-        const response = await fetch(`${API_BASE}/api/us-real-energy-imports?start_year=${startYear}&end_year=${endYear}`);
-        if (response.ok) {
-            payload = await response.json();
-        }
+        payload = await fetchJsonWithTimeout(
+            `${API_BASE}/api/us-real-energy-imports?start_year=${startYear}&end_year=${endYear}`,
+            18000
+        );
     } catch (error) {
         console.warn('US real endpoint unavailable, trying Census client fallback.', error);
+        if (titleElement) {
+            titleElement.textContent = 'United States oil and gas net exports (real data) — server slow, trying direct Census fallback…';
+        }
+    }
+
+    const hasServerOilGasValues = !!(payload && Array.isArray(payload.points) && payload.points.some(point =>
+        (point.oil_net_imports_usd != null && Number.isFinite(Number(point.oil_net_imports_usd))) ||
+        (point.gas_net_imports_usd != null && Number.isFinite(Number(point.gas_net_imports_usd)))
+    ));
+
+    if (payload && Array.isArray(payload.points) && payload.points.length > 0 && !hasServerOilGasValues) {
+        try {
+            if (titleElement) {
+                titleElement.textContent = 'United States oil and gas net exports (real data) — server returned empty oil/gas values, trying direct Census fallback…';
+            }
+            payload = await buildUsRealEnergyFromCensus(startYear, endYear);
+        } catch (error) {
+            console.warn('Direct Census fallback also unavailable after empty backend payload.', error);
+        }
     }
 
     if (!payload || !Array.isArray(payload.points) || payload.points.length === 0) {
         try {
             payload = await buildUsRealEnergyFromCensus(startYear, endYear);
         } catch (error) {
-            throw new Error('Census client fallback unavailable for U.S. oil/gas net-trade series.');
+            throw new Error('Census client fallback unavailable for U.S. oil/gas net-exports series.');
         }
+    }
+
+    try {
+        const brentMap = await getBrentAnnualMap();
+        if (brentMap.size && Array.isArray(payload.points)) {
+            payload.points = payload.points.map(point => {
+                const year = Number(point.year);
+                return {
+                    ...point,
+                    brent_usd_per_barrel: Number.isFinite(year) ? (brentMap.get(year) ?? null) : null,
+                };
+            });
+        }
+    } catch (error) {
+        console.warn('Brent enrichment unavailable for U.S. chart.', error);
     }
 
     renderUsRealChart(payload);
@@ -1460,28 +2053,181 @@ async function fetchAndRenderImportsWeights() {
     let payload = await response.json();
 
     const normalized = normalizeImportsWeightsPayload(payload);
-    const hasNetWeights = normalized.points.some(item =>
-        item.oil_weight_pct_of_total_net_imports != null || item.gases_weight_pct_of_total_net_imports != null
+    const hasImportWeights = normalized.points.some(item =>
+        item.oil_weight_pct_of_total_imports != null || item.gases_weight_pct_of_total_imports != null
     );
 
-    const appearsLegacy = normalized.points.length > 0 && normalized.points.some(item => item.total_balance_million_eur == null);
-    if (appearsLegacy || !hasNetWeights) {
+    const hasImportsBase = normalized.points.some(item => item.total_imports_million_eur != null);
+    if (!hasImportWeights || !hasImportsBase) {
         try {
             const periods = normalized.points.map(item => item.period);
-            payload = await buildNetImportsWeightsPayloadFromEurostat(periods);
+            payload = await buildImportsWeightsPayloadFromEurostat(periods);
         } catch (error) {
-            console.warn('Net-imports fallback enrichment failed; using backend payload as-is.', error);
+            console.warn('Imports-share fallback enrichment failed; using backend payload as-is.', error);
         }
+    }
+
+    try {
+        const brentMap = await getBrentAnnualMap();
+        if (brentMap.size && Array.isArray(payload.points)) {
+            payload.points = payload.points.map(point => {
+                const period = point && point.period != null ? String(point.period) : '';
+                const year = Number(period.includes('/') ? period.split('/')[1] : period);
+                return {
+                    ...point,
+                    brent_usd_per_barrel: Number.isFinite(year) ? (brentMap.get(year) ?? null) : null,
+                };
+            });
+        }
+    } catch (error) {
+        console.warn('Brent enrichment unavailable for Eurozone imports composition chart.', error);
     }
 
     renderImportsWeightsChart(payload);
 }
 
-async function fetchAndRenderUsItalyFuelProxy() {
-    const response = await fetch(`${API_BASE}/api/us-italy-imports-fuel-proxy`);
+async function fetchAndRenderPetrochemImports() {
+    const fetchCountryImportsAnnual = async () => {
+        const response = await fetch(`${API_BASE}/api/petrochem-country-imports?countries=FR,DE,BE,IT,ES&partner=WORLD&sitc06=SITC5`);
+        if (!response.ok) throw new Error(`Server error ${response.status}`);
+        return await response.json();
+    };
+
+    try {
+        const countryPayload = await fetchCountryImportsAnnual();
+        let brentMap = new Map();
+        const brentByYear = (((countryPayload || {}).brent || {}).by_year) || {};
+        Object.entries(brentByYear).forEach(([yearKey, value]) => {
+            const year = Number(yearKey);
+            const oilValue = Number(value);
+            if (Number.isFinite(year) && Number.isFinite(oilValue)) {
+                brentMap.set(year, oilValue);
+            }
+        });
+        if (!brentMap.size) {
+            brentMap = await getBrentAnnualMap();
+        }
+        const countrySeriesByGeo = new Map();
+        (countryPayload.series || []).forEach(series => {
+            const yearMap = new Map();
+            (series.points || []).forEach(point => {
+                const year = Number(point.year);
+                const value = Number(point.imports_eur);
+                if (Number.isFinite(year) && Number.isFinite(value)) {
+                    yearMap.set(year, value);
+                }
+            });
+            countrySeriesByGeo.set(String(series.geo || '').toUpperCase(), yearMap);
+        });
+
+        const allYears = new Set([
+            ...((countrySeriesByGeo.get('FR') || new Map()).keys()),
+            ...((countrySeriesByGeo.get('DE') || new Map()).keys()),
+            ...((countrySeriesByGeo.get('BE') || new Map()).keys()),
+            ...((countrySeriesByGeo.get('IT') || new Map()).keys()),
+            ...((countrySeriesByGeo.get('ES') || new Map()).keys()),
+        ]);
+
+        const yearsSorted = [...allYears].sort((a, b) => a - b);
+        const mergedPoints = yearsSorted.map(year => {
+            const fr = (countrySeriesByGeo.get('FR') || new Map()).get(year) ?? null;
+            const de = (countrySeriesByGeo.get('DE') || new Map()).get(year) ?? null;
+            const be = (countrySeriesByGeo.get('BE') || new Map()).get(year) ?? null;
+            const it = (countrySeriesByGeo.get('IT') || new Map()).get(year) ?? null;
+            const es = (countrySeriesByGeo.get('ES') || new Map()).get(year) ?? null;
+            const total = [fr, de, be, it, es].filter(v => Number.isFinite(v)).reduce((acc, v) => acc + v, 0);
+            return {
+                period: String(year),
+                eurozone_imports_eur: total > 0 ? total : null,
+                france_imports_eur: fr,
+                germany_imports_eur: de,
+                belgium_imports_eur: be,
+                italy_imports_eur: it,
+                spain_imports_eur: es,
+                brent_usd_per_barrel: brentMap.get(year) ?? null,
+            };
+        });
+
+        if (mergedPoints.length) {
+            renderPetrochemEurozoneChart(mergedPoints);
+            renderPetrochemCountriesChart(mergedPoints);
+            return;
+        }
+    } catch (error) {
+        console.warn('Country-enhanced petrochem endpoint unavailable, falling back to Eurostat API path.', error);
+    }
+
+    const sitc51ImpMap = await fetchQuarterlyTradeValueByFlow('SITC51', 'IMP');
+    const sitc57ImpMap = await fetchQuarterlyTradeValueByFlow('SITC57', 'IMP');
+    const hasDetailed = (sitc51ImpMap.size + sitc57ImpMap.size) > 0;
+
+    const definitionLabel = hasDetailed
+        ? 'imports only: SITC51 (organic chemicals) + SITC57 (plastics in primary forms)'
+        : 'imports only fallback: SITC5 chemicals (SITC51/SITC57 unavailable in DS-059331 API)';
+
+    const importsMap = new Map();
+    if (hasDetailed) {
+        const periodSet = new Set([...sitc51ImpMap.keys(), ...sitc57ImpMap.keys()]);
+        for (const period of periodSet) {
+            importsMap.set(period, Number(sitc51ImpMap.get(period) || 0) + Number(sitc57ImpMap.get(period) || 0));
+        }
+    } else {
+        const sitc5Map = await fetchQuarterlyTradeValueByFlow('SITC5', 'IMP');
+        sitc5Map.forEach((value, period) => importsMap.set(period, value));
+    }
+
+    const periods = [...importsMap.keys()].sort((a, b) => {
+        const [aq, ay] = [Number(String(a)[1]), Number(String(a).split('/')[1])];
+        const [bq, by] = [Number(String(b)[1]), Number(String(b).split('/')[1])];
+        return ay - by || aq - bq;
+    });
+
+    let brentMap = new Map();
+    try {
+        brentMap = await getBrentAnnualMap();
+    } catch (error) {
+        console.warn('Brent annual map unavailable for petrochem fallback path.', error);
+    }
+
+    const points = periods.map(period => {
+        const year = Number(String(period).split('/')[1]);
+        return {
+        period: String(period),
+        eurozone_imports_eur: importsMap.get(period) ?? null,
+        france_imports_eur: null,
+        germany_imports_eur: null,
+        belgium_imports_eur: null,
+        italy_imports_eur: null,
+        spain_imports_eur: null,
+        brent_usd_per_barrel: Number.isFinite(year) ? (brentMap.get(year) ?? null) : null,
+    };
+    });
+
+    renderPetrochemEurozoneChart(points, definitionLabel);
+    renderPetrochemCountriesChart(points, definitionLabel);
+}
+
+async function fetchAndRenderCountryRealFuel(geo, chartConfig) {
+    const response = await fetch(`${API_BASE}/api/eurostat-country-imports-fuel-real?geo=${encodeURIComponent(geo)}`);
     if (!response.ok) throw new Error(`Server error ${response.status}`);
     const payload = await response.json();
-    renderUsItalyFuelProxyChart(payload);
+
+    try {
+        const brentMap = await getBrentAnnualMap();
+        if (brentMap.size && Array.isArray(payload.points)) {
+            payload.points = payload.points.map(point => {
+                const year = Number(point.year);
+                return {
+                    ...point,
+                    brent_usd_per_barrel: Number.isFinite(year) ? (brentMap.get(year) ?? null) : null,
+                };
+            });
+        }
+    } catch (error) {
+        console.warn(`Brent enrichment unavailable for ${geo} imports composition chart.`, error);
+    }
+
+    renderCountryRealFuelChart(payload, chartConfig);
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1500,18 +2246,82 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
+        await fetchAndRenderPetrochemImports();
+    } catch (error) {
+        console.error('Error loading petrochemicals imports chart:', error);
+        const euroTitle = document.getElementById('petrochemEurozoneTitle');
+        const countriesTitle = document.getElementById('petrochemCountriesTitle');
+        if (euroTitle) euroTitle.textContent = 'Petrochemicals imports - Eurozone chart failed to load';
+        if (countriesTitle) countriesTitle.textContent = 'Petrochemicals imports - Countries chart failed to load';
+    }
+
+    try {
         await fetchAndRenderUsRealEnergy();
     } catch (error) {
         console.error('Error loading U.S. real energy chart:', error);
         const titleElement = document.getElementById('usFuelTitle');
         if (titleElement) {
-            titleElement.textContent = 'United States oil/gas net-trade chart failed to load (real-data route unavailable)';
+            titleElement.textContent = 'United States oil/gas net-exports chart failed to load (real-data route unavailable)';
         }
     }
 
-    try {
-        await fetchAndRenderUsItalyFuelProxy();
-    } catch (error) {
-        console.error('Error loading Italy proxy chart:', error);
+    const countryChartConfigs = [
+        {
+            geo: 'IT',
+            countryLabel: 'Italy',
+            titleId: 'italyFuelTitle',
+            canvasId: 'italyImportsChart',
+            colors: { line: '#92400E' },
+            getChart: () => italyImportsChart,
+            setChart: chart => { italyImportsChart = chart; }
+        },
+        {
+            geo: 'DE',
+            countryLabel: 'Germany',
+            titleId: 'germanyFuelTitle',
+            canvasId: 'germanyImportsChart',
+            colors: { line: '#1F2937' },
+            getChart: () => germanyImportsChart,
+            setChart: chart => { germanyImportsChart = chart; }
+        },
+        {
+            geo: 'FR',
+            countryLabel: 'France',
+            titleId: 'franceFuelTitle',
+            canvasId: 'franceImportsChart',
+            colors: { line: '#1D4ED8' },
+            getChart: () => franceImportsChart,
+            setChart: chart => { franceImportsChart = chart; }
+        },
+        {
+            geo: 'ES',
+            countryLabel: 'Spain',
+            titleId: 'spainFuelTitle',
+            canvasId: 'spainImportsChart',
+            colors: { line: '#B91C1C' },
+            getChart: () => spainImportsChart,
+            setChart: chart => { spainImportsChart = chart; }
+        },
+        {
+            geo: 'BE',
+            countryLabel: 'Belgium',
+            titleId: 'belgiumFuelTitle',
+            canvasId: 'belgiumImportsChart',
+            colors: { line: '#047857' },
+            getChart: () => belgiumImportsChart,
+            setChart: chart => { belgiumImportsChart = chart; }
+        }
+    ];
+
+    for (const config of countryChartConfigs) {
+        try {
+            await fetchAndRenderCountryRealFuel(config.geo, config);
+        } catch (error) {
+            console.error(`Error loading ${config.countryLabel} real-data chart:`, error);
+            const titleElement = document.getElementById(config.titleId);
+            if (titleElement) {
+                titleElement.textContent = `${config.countryLabel} real-data chart failed to load (Eurostat endpoint unavailable)`;
+            }
+        }
     }
 });

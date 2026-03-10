@@ -12,6 +12,7 @@ Then open `index.html` in your browser.
 
 ### Option 2: Manual Start
 ```bash
+python3 -m pip install -r requirements.txt
 python3 api_server.py
 ```
 Then open `index.html` in your browser.

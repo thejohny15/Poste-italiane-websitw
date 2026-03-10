@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oil Dual API Test</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Petroleum & Other Liquids: Production + Consumption (Dual API)</h1>
+            <p class="subtitle">Monthly country production shares of world petroleum and other liquids + annual world consumption growth</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="energy_europe.html" class="nav-link">Energy in Europe</a>
+                <a href="oil_dual_api.html" class="nav-link active">Oil Dual API</a>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <input id="eiaApiKeyInput" type="password" placeholder="Enter EIA API key" style="padding: 8px 10px; min-width: 320px; border: 1px solid #D1D5DB; border-radius: 6px;" />
+                <button id="saveEiaKeyBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">Use key</button>
+                <button id="clearEiaKeyBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">Clear key</button>
+                <span id="eiaKeyStatus" style="font-size: 13px; color: #374151;"></span>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Standalone Dual-Source Petroleum & Other Liquids Chart</h2>
+            <div class="chart-container" style="height: 620px;">
+                <h3 id="oilDualApiTitle" class="chart-title">Loading monthly production + annual consumption (petroleum and other liquids)...</h3>
+                <canvas id="oilDualApiChart"></canvas>
+            </div>
+
+            <h2 class="section-title">Top 5 Net Exporters Share of World Net Exports (Petroleum & Other Liquids, Annual)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="oilTopExportersTitle" class="chart-title">Loading annual top net exporter shares...</h3>
+                <canvas id="oilTopExportersChart"></canvas>
+            </div>
+        </main>
+    </div>
+
+    <script src="oil_dual_api.js"></script>
+</body>
+</html>

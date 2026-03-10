@@ -12,10 +12,15 @@ from datetime import datetime, timedelta, timezone
 import requests
 import re
 import json
+import base64
+import zlib
+import os
 from io import StringIO
 import time
 from typing import Any
+from pathlib import Path
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for browser requests
@@ -29,6 +34,43 @@ DATA_CACHE: dict[str, Any] = {
 
 US_REAL_ENERGY_CACHE: dict[tuple[int, int], dict[str, Any]] = {}
 US_REAL_ENERGY_CACHE_TTL_SECONDS = 3600
+EUROSTAT_COUNTRY_FUEL_CACHE: dict[str, dict[str, Any]] = {}
+EUROSTAT_COUNTRY_FUEL_CACHE_TTL_SECONDS = 3600
+EUROZONE_OIL_GAS_SPLIT_CACHE: dict[str, Any] = {}
+EUROZONE_OIL_GAS_SPLIT_CACHE_TTL_SECONDS = 3600
+EMBER_EUROPE_ELECTRICITY_SHARE_CACHE: dict[str, Any] = {}
+EMBER_EUROPE_ELECTRICITY_SHARE_CACHE_TTL_SECONDS = 12 * 3600
+EMBER_MONTHLY_DF_CACHE: dict[str, Any] = {
+    'computed_at': 0.0,
+    'df': None,
+}
+EMBER_MONTHLY_DF_CACHE_TTL_SECONDS = 6 * 3600
+EMBER_MONTHLY_CSV_URL = 'https://files.ember-energy.org/public-downloads/monthly_full_release_long_format.csv'
+TE_MARKETS_BASE_URL = 'https://d3ii0wo49og5mi.cloudfront.net/markets'
+TE_CHARTS_TOKEN = '20240229:nazare'
+TE_CHARTS_OBFUSCATION_KEY = 'tradingeconomics-charts-core-api-key'
+TE_EU_GAS_SYMBOL = 'ngeu:com'
+EIA_INTERNATIONAL_BASE_URL = 'https://api.eia.gov/v2/international/data/'
+EIA_API_KEY_DEFAULT = os.getenv('EIA_API_KEY', 'DEMO_KEY')
+EIA_CONSUMPTION_API_KEY_DEFAULT = os.getenv('EIA_CONSUMPTION_API_KEY', EIA_API_KEY_DEFAULT)
+EIA_WORLD_OIL_COUNTRIES = {
+    'WORL': 'world_tbpd',
+    'USA': 'united_states_tbpd',
+    'RUS': 'russia_tbpd',
+    'SAU': 'saudi_arabia_tbpd',
+    'KWT': 'kuwait_tbpd',
+    'QAT': 'qatar_tbpd',
+    'ARE': 'uae_tbpd',
+    'IRQ': 'iraq_tbpd',
+}
+EIA_WORLD_OIL_PRODUCTION_CACHE: dict[str, Any] = {}
+EIA_WORLD_OIL_PRODUCTION_CACHE_TTL_SECONDS = 6 * 3600
+EIA_WORLD_OIL_CONSUMPTION_CACHE: dict[str, Any] = {}
+EIA_WORLD_OIL_CONSUMPTION_CACHE_TTL_SECONDS = 6 * 3600
+EIA_WORLD_EXPORTERS_SHARE_CACHE: dict[str, Any] = {}
+EIA_WORLD_EXPORTERS_SHARE_CACHE_TTL_SECONDS = 6 * 3600
+EIA_DISK_CACHE_DIR = Path(__file__).resolve().parent / '.cache' / 'eia'
+EIA_DISK_CACHE_MAX_AGE_SECONDS = 7 * 24 * 3600
 
 EUROZONE_MEMBER_CODES = {
     'AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'EL', 'IE',
@@ -62,6 +104,147 @@ def append_unweighted_aggregate_row(rows, metric_keys, aggregate_geo_codes=None)
 
     rows.append(aggregate)
 
+
+def _eia_disk_cache_file(cache_key):
+    safe_name = re.sub(r'[^a-zA-Z0-9._-]+', '_', str(cache_key))
+    return EIA_DISK_CACHE_DIR / f"{safe_name}.json"
+
+
+def load_eia_disk_cache_payload(cache_key, max_age_seconds: int | None = EIA_DISK_CACHE_MAX_AGE_SECONDS):
+    try:
+        path = _eia_disk_cache_file(cache_key)
+        if not path.exists():
+            return None
+        with path.open('r', encoding='utf-8') as handle:
+            wrapped = json.load(handle)
+        computed_at = float((wrapped or {}).get('computed_at') or 0.0)
+        payload = (wrapped or {}).get('payload')
+        if not payload:
+            return None
+        if max_age_seconds is not None and computed_at > 0 and (time.time() - computed_at) > max_age_seconds:
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def save_eia_disk_cache_payload(cache_key, payload):
+    try:
+        EIA_DISK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path = _eia_disk_cache_file(cache_key)
+        wrapped = {
+            'computed_at': time.time(),
+            'payload': payload,
+        }
+        with path.open('w', encoding='utf-8') as handle:
+            json.dump(wrapped, handle)
+    except Exception:
+        return
+
+
+def load_latest_eia_disk_cache_payload_by_prefix(prefix):
+    try:
+        if not EIA_DISK_CACHE_DIR.exists():
+            return None
+
+        matched = []
+        for path in EIA_DISK_CACHE_DIR.glob('*.json'):
+            try:
+                safe_prefix = re.sub(r'[^a-zA-Z0-9._-]+', '_', str(prefix or ''))
+                if safe_prefix and not path.name.startswith(safe_prefix):
+                    continue
+                with path.open('r', encoding='utf-8') as handle:
+                    wrapped = json.load(handle)
+                computed_at = float((wrapped or {}).get('computed_at') or 0.0)
+                payload = (wrapped or {}).get('payload')
+                if payload:
+                    matched.append((computed_at, payload))
+            except Exception:
+                continue
+
+        if not matched:
+            return None
+
+        matched.sort(key=lambda item: item[0], reverse=True)
+        return matched[0][1]
+    except Exception:
+        return None
+
+
+def build_source_url_with_api_key(source_url, api_key):
+    """Return source_url with api_key query param injected when missing."""
+    raw_url = str(source_url or '').strip()
+    raw_key = str(api_key or '').strip()
+    if not raw_url:
+        return raw_url
+
+    try:
+        parsed = urlparse(raw_url)
+        query_items = parse_qsl(parsed.query, keep_blank_values=True)
+        has_api_key = any(k == 'api_key' and str(v or '').strip() for (k, v) in query_items)
+        if raw_key and not has_api_key:
+            query_items.append(('api_key', raw_key))
+        new_query = urlencode(query_items, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        return raw_url
+
+
+def override_source_activity_id(source_url, activity_id):
+    """Return source_url with facets[activityId][] overridden to the given activity id."""
+    raw_url = str(source_url or '').strip()
+    if not raw_url:
+        return raw_url
+
+    try:
+        parsed = urlparse(raw_url)
+        query_items = parse_qsl(parsed.query, keep_blank_values=True)
+        filtered = [(k, v) for (k, v) in query_items if k != 'facets[activityId][]']
+        filtered.append(('facets[activityId][]', str(activity_id)))
+        new_query = urlencode(filtered, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        return raw_url
+
+
+def override_source_facets(source_url, activity_id=None, product_id=None, unit=None):
+    """Return source_url with selected EIA facet query parameters overridden."""
+    raw_url = str(source_url or '').strip()
+    if not raw_url:
+        return raw_url
+
+    try:
+        parsed = urlparse(raw_url)
+        query_items = parse_qsl(parsed.query, keep_blank_values=True)
+        skip_keys = {'facets[activityId][]', 'facets[productId][]', 'facets[unit][]'}
+        filtered = [(k, v) for (k, v) in query_items if k not in skip_keys]
+        if activity_id is not None:
+            filtered.append(('facets[activityId][]', str(activity_id)))
+        if product_id is not None:
+            filtered.append(('facets[productId][]', str(product_id)))
+        if unit is not None:
+            filtered.append(('facets[unit][]', str(unit)))
+        new_query = urlencode(filtered, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        return raw_url
+
+
+def drop_source_country_facets(source_url):
+    """Return source_url without countryRegion facet filters."""
+    raw_url = str(source_url or '').strip()
+    if not raw_url:
+        return raw_url
+
+    try:
+        parsed = urlparse(raw_url)
+        query_items = parse_qsl(parsed.query, keep_blank_values=True)
+        filtered = [(k, v) for (k, v) in query_items if k != 'facets[countryRegionId][]']
+        new_query = urlencode(filtered, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        return raw_url
+
 # FRED API - Register for free at https://fred.stlouisfed.org/docs/api/api_key.html
 # For now, using public data endpoints
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
@@ -80,7 +263,7 @@ def to_float_or_none(value):
     except ValueError:
         return None
 
-def fetch_fred_data(series_id, start_date, end_date, api_key="demo"):
+def fetch_fred_data(series_id, start_date, end_date, api_key="demo", timeout_seconds=12, max_attempts=2):
     """Fetch data from FRED API"""
     try:
         params = {
@@ -90,15 +273,1275 @@ def fetch_fred_data(series_id, start_date, end_date, api_key="demo"):
             'observation_start': start_date,
             'observation_end': end_date
         }
-        response = requests.get(FRED_BASE, params=params)
-        data = response.json()
-        
-        if 'observations' in data:
-            return [(obs['date'], float(obs['value'])) for obs in data['observations'] if obs['value'] != '.']
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.get(FRED_BASE, params=params, timeout=timeout_seconds)
+                response.raise_for_status()
+                data = response.json()
+
+                if 'observations' in data:
+                    return [(obs['date'], float(obs['value'])) for obs in data['observations'] if obs['value'] != '.']
+                return []
+            except Exception as e:
+                last_error = e
+                if attempt < max_attempts:
+                    time.sleep(0.8 * attempt)
+
+        print(f"FRED fetch failed for {series_id} after {max_attempts} attempts: {last_error}")
         return []
     except Exception as e:
         print(f"Error fetching FRED data: {e}")
         return []
+
+
+def decode_te_charts_payload(payload_text, obfuscation_key=TE_CHARTS_OBFUSCATION_KEY):
+    """Decode TradingEconomics chart payload (base64 + XOR + gzip)."""
+    payload = str(payload_text or '').strip()
+    if not payload:
+        return None
+
+    if payload.startswith('"'):
+        payload = json.loads(payload)
+
+    raw = base64.b64decode(payload)
+    key_bytes = obfuscation_key.encode('utf-8')
+    data = bytearray(raw)
+    for index in range(len(data)):
+        data[index] ^= key_bytes[index % len(key_bytes)]
+
+    decoded = zlib.decompress(bytes(data), 16 + zlib.MAX_WBITS).decode('utf-8')
+    return json.loads(decoded)
+
+
+def fetch_tradingeconomics_market_daily_series(symbol=TE_EU_GAS_SYMBOL, span='10y', interval='1d'):
+    """Fetch daily market series from TradingEconomics chart endpoint."""
+    url = f"{TE_MARKETS_BASE_URL}/{symbol}?interval={interval}&span={span}&key={TE_CHARTS_TOKEN}"
+    response = requests.get(url, timeout=20)
+    response.raise_for_status()
+
+    decoded = decode_te_charts_payload(response.text)
+    if not isinstance(decoded, dict):
+        return []
+
+    series_block = decoded.get('series')
+    if not isinstance(series_block, list) or not series_block:
+        return []
+
+    rows = series_block[0].get('data')
+    if not isinstance(rows, list):
+        return []
+
+    daily = []
+    for row in rows:
+        if not isinstance(row, list) or len(row) < 2:
+            continue
+        ts = row[0]
+        price = row[1]
+        if ts is None or price is None:
+            continue
+        try:
+            dt = datetime.utcfromtimestamp(float(ts))
+            daily.append((dt.strftime('%Y-%m-%d'), float(price)))
+        except Exception:
+            continue
+
+    return daily
+
+
+def get_ember_monthly_long_df(force_refresh=False):
+    """Return cached Ember monthly long-format dataframe used by energy charts."""
+    now_ts = time.time()
+    cached_df = EMBER_MONTHLY_DF_CACHE.get('df')
+    cached_at = EMBER_MONTHLY_DF_CACHE.get('computed_at', 0.0)
+
+    if not force_refresh and cached_df is not None and (now_ts - cached_at) < EMBER_MONTHLY_DF_CACHE_TTL_SECONDS:
+        return cached_df
+
+    df = pd.read_csv(
+        EMBER_MONTHLY_CSV_URL,
+        usecols=['Area', 'Date', 'Category', 'Variable', 'Unit', 'Value']
+    )
+    EMBER_MONTHLY_DF_CACHE['df'] = df
+    EMBER_MONTHLY_DF_CACHE['computed_at'] = now_ts
+    return df
+
+
+def normalize_area_name(area_name):
+    return re.sub(r'[^a-z0-9]+', '', str(area_name or '').strip().lower())
+
+
+def ember_area_aliases(entity_name):
+    normalized = normalize_area_name(entity_name)
+    aliases = {normalized}
+    if normalized in {'europe', 'eu', 'europeanunion', 'eu27', 'eu272020'}:
+        aliases.update({'europe', 'eu', 'eu27', 'eu272020', 'europeanunion'})
+    return aliases
+
+
+def fetch_ember_europe_electricity_share_monthly(date_from='2021-01-01', date_to=None, entity='Europe'):
+    """Fetch monthly electricity generation percentage shares for Europe/EU from Ember monthly dataset."""
+    if date_to is None:
+        date_to = datetime.utcnow().strftime('%Y-%m-%d')
+
+    now_ts = time.time()
+    entity_norm = str(entity or 'Europe').strip()
+    cache_key = f'monthly_pct_share::{entity_norm}'
+    cached = EMBER_EUROPE_ELECTRICITY_SHARE_CACHE.get(cache_key)
+
+    if cached and (now_ts - cached.get('computed_at', 0)) < EMBER_EUROPE_ELECTRICITY_SHARE_CACHE_TTL_SECONDS:
+        records = cached.get('records', [])
+    else:
+        df = get_ember_monthly_long_df()
+        area_aliases = ember_area_aliases(entity_norm)
+        area_norm = df['Area'].astype(str).map(normalize_area_name)
+
+        target_variables = [
+            'Solar',
+            'Wind',
+            'Hydro',
+            'Bioenergy',
+            'Other renewables',
+            'Nuclear',
+            'Gas',
+            'Coal',
+            'Other fossil',
+        ]
+
+        filtered = df[
+            (area_norm.isin(area_aliases)) &
+            (df['Category'] == 'Electricity generation') &
+            (df['Unit'] == '%') &
+            (df['Variable'].isin(target_variables))
+        ].copy()
+
+        filtered['Date'] = pd.to_datetime(filtered['Date'], errors='coerce')
+        filtered['Value'] = pd.to_numeric(filtered['Value'], errors='coerce')
+        filtered = filtered.dropna(subset=['Date', 'Value'])
+
+        pivot = filtered.pivot_table(
+            index='Date',
+            columns='Variable',
+            values='Value',
+            aggfunc='mean'
+        ).sort_index()
+
+        for variable in target_variables:
+            if variable not in pivot.columns:
+                pivot[variable] = np.nan
+
+        key_map = {
+            'Solar': 'solar',
+            'Wind': 'wind',
+            'Hydro': 'hydro',
+            'Bioenergy': 'bioenergy',
+            'Other renewables': 'other_renewables',
+            'Nuclear': 'nuclear',
+            'Gas': 'gas',
+            'Coal': 'coal',
+            'Other fossil': 'other_fossil',
+        }
+
+        records = []
+        for idx, row in pivot.iterrows():
+            idx_ts = pd.to_datetime(str(idx), errors='coerce')
+            if pd.isna(idx_ts):
+                continue
+            point: dict[str, Any] = {
+                'date': idx_ts.strftime('%Y-%m-%d'),
+            }
+            for original_name in target_variables:
+                key = key_map[original_name]
+                val = row.get(original_name)
+                point[key] = float(val) if pd.notna(val) else None
+            records.append(point)
+
+        if filtered.empty and ('eu' in area_aliases or 'europe' in area_aliases):
+            fallback_area_aliases = {'eu', 'europe'}
+            filtered = df[
+                (area_norm.isin(fallback_area_aliases)) &
+                (df['Category'] == 'Electricity generation') &
+                (df['Unit'] == '%') &
+                (df['Variable'].isin(target_variables))
+            ].copy()
+            filtered['Date'] = pd.to_datetime(filtered['Date'], errors='coerce')
+            filtered['Value'] = pd.to_numeric(filtered['Value'], errors='coerce')
+            filtered = filtered.dropna(subset=['Date', 'Value'])
+
+            pivot = filtered.pivot_table(
+                index='Date',
+                columns='Variable',
+                values='Value',
+                aggfunc='mean'
+            ).sort_index()
+
+            for variable in target_variables:
+                if variable not in pivot.columns:
+                    pivot[variable] = np.nan
+
+            records = []
+            for idx, row in pivot.iterrows():
+                idx_ts = pd.to_datetime(str(idx), errors='coerce')
+                if pd.isna(idx_ts):
+                    continue
+                point: dict[str, Any] = {
+                    'date': idx_ts.strftime('%Y-%m-%d'),
+                }
+                for original_name in target_variables:
+                    key = key_map[original_name]
+                    val = row.get(original_name)
+                    point[key] = float(val) if pd.notna(val) else None
+                records.append(point)
+            if not filtered.empty:
+                entity_norm = 'EU'
+
+        EMBER_EUROPE_ELECTRICITY_SHARE_CACHE[cache_key] = {
+            'computed_at': now_ts,
+            'records': records,
+            'entity': entity_norm,
+        }
+
+    start_dt = pd.to_datetime(date_from, errors='coerce')
+    end_dt = pd.to_datetime(date_to, errors='coerce')
+
+    filtered_records = []
+    for point in records:
+        point_dt = pd.to_datetime(str(point.get('date')), errors='coerce')
+        if pd.isna(point_dt):
+            continue
+        if not pd.isna(start_dt) and point_dt < start_dt:
+            continue
+        if not pd.isna(end_dt) and point_dt > end_dt:
+            continue
+        filtered_records.append(point)
+
+    return {
+        'dataset': 'Ember monthly electricity data (long format)',
+        'dataset_url': EMBER_MONTHLY_CSV_URL,
+        'entity': entity_norm,
+        'metric': 'pct_share',
+        'frequency': 'monthly',
+        'start_date': filtered_records[0]['date'] if filtered_records else None,
+        'end_date': filtered_records[-1]['date'] if filtered_records else None,
+        'keys': [
+            'solar', 'wind', 'hydro', 'bioenergy', 'other_renewables',
+            'nuclear', 'gas', 'coal', 'other_fossil'
+        ],
+        'points': filtered_records,
+    }
+
+
+@app.route('/api/europe-electricity-share-monthly', methods=['GET'])
+def get_europe_electricity_share_monthly():
+    """Return monthly electricity generation shares for EU (stacked share categories)."""
+    try:
+        date_from = request.args.get('date_from', '2021-01-01')
+        date_to = request.args.get('date_to', '2025-12-01')
+        entity = request.args.get('entity', 'Europe')
+        payload = fetch_ember_europe_electricity_share_monthly(date_from=date_from, date_to=date_to, entity=entity)
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in europe-electricity-share-monthly endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def fetch_europe_electricity_use_and_fossil_prices_monthly(date_from='2021-01-01', date_to='2025-12-01', entity='Europe'):
+    """Return monthly total generation and gas/coal generation (TWh) with gas/coal prices for Europe."""
+    entity_norm = str(entity or 'Europe').strip()
+
+    df = get_ember_monthly_long_df()
+    area_aliases = ember_area_aliases(entity_norm)
+    area_norm = df['Area'].astype(str).map(normalize_area_name)
+
+    target_variables = ['Total Generation', 'Gas', 'Coal']
+    filtered = df[
+        (area_norm.isin(area_aliases)) &
+        (df['Category'] == 'Electricity generation') &
+        (df['Unit'] == 'TWh') &
+        (df['Variable'].isin(target_variables))
+    ].copy()
+
+    if filtered.empty and ('eu' in area_aliases or 'europe' in area_aliases):
+        fallback_area_aliases = {'eu', 'europe'}
+        filtered = df[
+            (area_norm.isin(fallback_area_aliases)) &
+            (df['Category'] == 'Electricity generation') &
+            (df['Unit'] == 'TWh') &
+            (df['Variable'].isin(target_variables))
+        ].copy()
+        if not filtered.empty:
+            entity_norm = 'EU'
+
+    filtered['Date'] = pd.to_datetime(filtered['Date'], errors='coerce')
+    filtered['Value'] = pd.to_numeric(filtered['Value'], errors='coerce')
+    filtered = filtered.dropna(subset=['Date', 'Value'])
+
+    pivot = filtered.pivot_table(
+        index='Date',
+        columns='Variable',
+        values='Value',
+        aggfunc='mean'
+    ).sort_index()
+
+    for variable in target_variables:
+        if variable not in pivot.columns:
+            pivot[variable] = np.nan
+
+    gas_price_source = 'TradingEconomics NGEU:COM'
+    try:
+        te_daily_series = fetch_tradingeconomics_market_daily_series(symbol=TE_EU_GAS_SYMBOL, span='10y', interval='1d')
+        gas_price_map = monthly_average_from_daily(te_daily_series)
+    except Exception as exc:
+        print(f"TradingEconomics gas fetch failed, falling back to FRED PNGASEUUSDM: {exc}")
+        gas_price_source = 'FRED PNGASEUUSDM (fallback)'
+        gas_price_series = fetch_fred_data('PNGASEUUSDM', date_from, date_to, FRED_API_KEY)
+        gas_price_map = {str(date)[:7]: float(value) for date, value in gas_price_series}
+
+    coal_price_series = fetch_fred_data('PCOALAUUSDM', date_from, date_to, FRED_API_KEY)
+    coal_price_map = {str(date)[:7]: float(value) for date, value in coal_price_series}
+
+    start_dt = pd.to_datetime(date_from, errors='coerce')
+    end_dt = pd.to_datetime(date_to, errors='coerce')
+
+    points = []
+    for idx, row in pivot.iterrows():
+        idx_ts = pd.to_datetime(str(idx), errors='coerce')
+        if pd.isna(idx_ts):
+            continue
+        if not pd.isna(start_dt) and idx_ts < start_dt:
+            continue
+        if not pd.isna(end_dt) and idx_ts > end_dt:
+            continue
+
+        month_key = idx_ts.strftime('%Y-%m')
+        total_generation_value = to_float_or_none(row.get('Total Generation'))
+        gas_generation_value = to_float_or_none(row.get('Gas'))
+        coal_generation_value = to_float_or_none(row.get('Coal'))
+        gas_price_value = gas_price_map.get(month_key)
+        points.append({
+            'date': idx_ts.strftime('%Y-%m-%d'),
+            'total_generation_twh': total_generation_value,
+            'gas_generation_twh': gas_generation_value,
+            'coal_generation_twh': coal_generation_value,
+            'eu_natural_gas_price_eur_per_mwh': gas_price_value,
+            'eu_natural_gas_price_usd_per_mmbtu': gas_price_value,
+            'coal_price_usd_per_ton': coal_price_map.get(month_key),
+        })
+
+    return {
+        'dataset': 'Ember monthly electricity data + FRED commodity prices',
+        'entity': entity_norm,
+        'frequency': 'monthly',
+        'start_date': points[0]['date'] if points else None,
+        'end_date': points[-1]['date'] if points else None,
+        'points': points,
+        'price_series': {
+            'eu_natural_gas': gas_price_source,
+            'eu_natural_gas_unit': 'EUR/MWh',
+            'coal': 'PCOALAUUSDM',
+            'coal_unit': 'USD/ton',
+        }
+    }
+
+
+def parse_month_period(period_value):
+    period = str(period_value or '').strip()
+    if not period:
+        return None
+
+    for fmt in ('%Y-%m', '%Y-%m-%d', '%Y%m'):
+        try:
+            return datetime.strptime(period, fmt)
+        except ValueError:
+            continue
+
+    if re.match(r'^\d{4}$', period):
+        try:
+            return datetime.strptime(f"{period}-01", '%Y-%m')
+        except ValueError:
+            return None
+
+    return None
+
+
+def parse_year_period(period_value):
+    period = str(period_value or '').strip()
+    if not period:
+        return None
+
+    if re.match(r'^\d{4}$', period):
+        try:
+            return datetime.strptime(period, '%Y')
+        except ValueError:
+            return None
+
+    for fmt in ('%Y-%m', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(period, fmt)
+        except ValueError:
+            continue
+
+    return None
+
+
+def fetch_eia_world_oil_production_monthly(api_key=None, date_from='2018-01', date_to=None, source_url=None):
+    """Fetch monthly oil production (TBPD) for World + selected producers from EIA v2."""
+    effective_source_url = str(source_url or '').strip()
+    effective_api_key = str(api_key or EIA_API_KEY_DEFAULT).strip()
+    if not effective_source_url and not effective_api_key:
+        raise ValueError('Missing EIA api_key. Provide api_key query parameter or set EIA_API_KEY_DEFAULT.')
+
+    if not date_to:
+        date_to = datetime.utcnow().strftime('%Y-%m')
+
+    country_signature = ','.join(sorted(EIA_WORLD_OIL_COUNTRIES.keys()))
+    source_signature = effective_source_url if effective_source_url else 'default'
+    cache_key = f"v3:{date_from}:{date_to}:{country_signature}:{source_signature}"
+    cached = EIA_WORLD_OIL_PRODUCTION_CACHE.get(cache_key)
+    now_ts = time.time()
+    if cached and (now_ts - cached.get('computed_at', 0.0)) < EIA_WORLD_OIL_PRODUCTION_CACHE_TTL_SECONDS:
+        cached_payload = cached.get('payload') or {}
+        cached_points = cached_payload.get('points') or []
+        cached_has_us = bool(cached_points) and ('united_states_tbpd' in cached_points[0])
+        if cached_has_us:
+            return cached_payload
+
+    disk_cached = load_eia_disk_cache_payload(cache_key)
+    if disk_cached:
+        EIA_WORLD_OIL_PRODUCTION_CACHE[cache_key] = {
+            'computed_at': now_ts,
+            'payload': disk_cached,
+        }
+        return disk_cached
+
+    try:
+        if effective_source_url:
+            source_with_key = build_source_url_with_api_key(effective_source_url, effective_api_key)
+            response = requests.get(source_with_key, timeout=60)
+        else:
+            params = {
+                'api_key': effective_api_key,
+                'frequency': 'monthly',
+                'data[0]': 'value',
+                'facets[activityId][]': '1',
+                'facets[productId][]': '53',
+                'facets[unit][]': 'TBPD',
+                'start': date_from,
+                'end': date_to,
+                'sort[0][column]': 'period',
+                'sort[0][direction]': 'asc',
+                'offset': 0,
+                'length': 5000,
+            }
+
+            for country_code in EIA_WORLD_OIL_COUNTRIES.keys():
+                params[f'facets[countryRegionId][]'] = params.get('facets[countryRegionId][]', [])
+                if isinstance(params['facets[countryRegionId][]'], list):
+                    params['facets[countryRegionId][]'].append(country_code)
+
+            response = requests.get(EIA_INTERNATIONAL_BASE_URL, params=params, timeout=40)
+        response.raise_for_status()
+    except Exception:
+        fallback_payload = load_eia_disk_cache_payload(cache_key, max_age_seconds=None)
+        if fallback_payload:
+            EIA_WORLD_OIL_PRODUCTION_CACHE[cache_key] = {
+                'computed_at': now_ts,
+                'payload': fallback_payload,
+            }
+            return fallback_payload
+        raise
+    payload_json = response.json()
+
+    rows = payload_json.get('response', {}).get('data', [])
+    if not isinstance(rows, list):
+        rows = []
+
+    by_period: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        country_code = str(row.get('countryRegionId') or '').strip()
+        period = str(row.get('period') or '').strip()
+        metric_key = EIA_WORLD_OIL_COUNTRIES.get(country_code)
+
+        if not metric_key or not period:
+            continue
+
+        period_dt = parse_month_period(period)
+        if period_dt is None:
+            continue
+
+        period_key = period_dt.strftime('%Y-%m-01')
+        point = by_period.setdefault(period_key, {
+            'date': period_key,
+            'world_tbpd': None,
+            'united_states_tbpd': None,
+            'russia_tbpd': None,
+            'saudi_arabia_tbpd': None,
+            'kuwait_tbpd': None,
+            'qatar_tbpd': None,
+            'uae_tbpd': None,
+            'iraq_tbpd': None,
+        })
+
+        value = to_float_or_none(row.get('value'))
+        point[metric_key] = value
+
+    start_dt = parse_month_period(date_from)
+    end_dt = parse_month_period(date_to)
+
+    points = []
+    for _, point in sorted(by_period.items(), key=lambda item: item[0]):
+        point_dt = parse_month_period(point.get('date'))
+        if point_dt is None:
+            continue
+        if start_dt is not None and point_dt < start_dt:
+            continue
+        if end_dt is not None and point_dt > end_dt:
+            continue
+        points.append(point)
+
+    payload = {
+        'dataset': 'EIA International Data Browser / API v2',
+        'dataset_url': EIA_INTERNATIONAL_BASE_URL,
+        'metric': 'monthly_oil_production',
+        'unit': 'thousand barrels per day',
+        'unit_code': 'TBPD',
+        'frequency': 'monthly',
+        'start_date': points[0]['date'] if points else None,
+        'end_date': points[-1]['date'] if points else None,
+        'countries': [
+            'World',
+            'United States',
+            'Russia',
+            'Saudi Arabia',
+            'Kuwait',
+            'Qatar',
+            'United Arab Emirates',
+            'Iraq',
+        ],
+        'points': points,
+    }
+
+    EIA_WORLD_OIL_PRODUCTION_CACHE[cache_key] = {
+        'computed_at': now_ts,
+        'payload': payload,
+    }
+    save_eia_disk_cache_payload(cache_key, payload)
+    return payload
+
+
+def fetch_eia_world_oil_consumption_annual(api_key=None, date_from='2018', date_to=None, source_url=None):
+    """Fetch annual world oil consumption growth (% from 2018 baseline) from EIA v2."""
+    effective_source_url = str(source_url or '').strip()
+    effective_api_key = str(api_key or EIA_CONSUMPTION_API_KEY_DEFAULT).strip()
+    if not effective_source_url and not effective_api_key:
+        raise ValueError('Missing EIA consumption api_key. Provide api_key query parameter or set EIA_CONSUMPTION_API_KEY_DEFAULT.')
+
+    if not date_to:
+        date_to = datetime.utcnow().strftime('%Y')
+
+    source_signature = effective_source_url if effective_source_url else 'default'
+    cache_key = f"annual-v2:{date_from}:{date_to}:WORL:{source_signature}"
+    cached = EIA_WORLD_OIL_CONSUMPTION_CACHE.get(cache_key)
+    now_ts = time.time()
+    if cached and (now_ts - cached.get('computed_at', 0.0)) < EIA_WORLD_OIL_CONSUMPTION_CACHE_TTL_SECONDS:
+        return cached.get('payload')
+
+    disk_cached = load_eia_disk_cache_payload(cache_key)
+    if disk_cached:
+        EIA_WORLD_OIL_CONSUMPTION_CACHE[cache_key] = {
+            'computed_at': now_ts,
+            'payload': disk_cached,
+        }
+        return disk_cached
+
+    try:
+        if effective_source_url:
+            source_with_key = build_source_url_with_api_key(effective_source_url, effective_api_key)
+            response = requests.get(source_with_key, timeout=60)
+        else:
+            params = {
+                'api_key': effective_api_key,
+                'frequency': 'annual',
+                'data[0]': 'value',
+                'facets[activityId][]': '2',
+                'facets[productId][]': '5',
+                'facets[unit][]': 'TBPD',
+                'facets[countryRegionId][]': 'WORL',
+                'start': date_from,
+                'end': date_to,
+                'sort[0][column]': 'period',
+                'sort[0][direction]': 'asc',
+                'offset': 0,
+                'length': 5000,
+            }
+
+            response = requests.get(EIA_INTERNATIONAL_BASE_URL, params=params, timeout=40)
+        response.raise_for_status()
+    except Exception:
+        fallback_payload = load_eia_disk_cache_payload(cache_key, max_age_seconds=None)
+        if fallback_payload:
+            EIA_WORLD_OIL_CONSUMPTION_CACHE[cache_key] = {
+                'computed_at': now_ts,
+                'payload': fallback_payload,
+            }
+            return fallback_payload
+        raise
+    payload_json = response.json()
+
+    rows = payload_json.get('response', {}).get('data', [])
+    if not isinstance(rows, list):
+        rows = []
+
+    raw_points = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        year_dt = parse_year_period(row.get('period'))
+        if year_dt is None:
+            continue
+        value = to_float_or_none(row.get('value'))
+        raw_points.append({
+            'date': f"{year_dt.strftime('%Y')}-01-01",
+            'world_tbpd': value,
+        })
+
+    raw_points = sorted(raw_points, key=lambda item: item.get('date') or '')
+
+    baseline = None
+    for point in raw_points:
+        if str(point.get('date', '')).startswith('2018') and point.get('world_tbpd') is not None:
+            baseline = point.get('world_tbpd')
+            break
+
+    points = []
+    for point in raw_points:
+        value = point.get('world_tbpd')
+        pct = None
+        if baseline is not None and baseline != 0 and value is not None:
+            pct = ((value / baseline) - 1.0) * 100.0
+        points.append({
+            'date': point.get('date'),
+            'world_tbpd': value,
+            'world_pct_from_2018': pct,
+        })
+
+    payload = {
+        'dataset': 'EIA International Data Browser / API v2',
+        'dataset_url': EIA_INTERNATIONAL_BASE_URL,
+        'metric': 'annual_world_oil_consumption_pct_change_from_2018',
+        'unit': 'percent',
+        'unit_code': 'PCT',
+        'frequency': 'annual',
+        'start_date': points[0]['date'] if points else None,
+        'end_date': points[-1]['date'] if points else None,
+        'countries': ['World'],
+        'points': points,
+    }
+
+    EIA_WORLD_OIL_CONSUMPTION_CACHE[cache_key] = {
+        'computed_at': now_ts,
+        'payload': payload,
+    }
+    save_eia_disk_cache_payload(cache_key, payload)
+    return payload
+
+
+def slugify_series_key(value, fallback='series'):
+    raw = re.sub(r'[^a-z0-9]+', '_', str(value or '').strip().lower()).strip('_')
+    if not raw:
+        raw = fallback
+    return raw
+
+
+def fetch_eia_top_exporters_share_annual(api_key=None, source_url=None, production_source_url=None, date_from='2018', date_to=None, top_n=5):
+    """Return top N net-exporter series where net exports = production - consumption (annual, % of world net exports)."""
+    effective_consumption_source_url = str(source_url or '').strip()
+    effective_production_source_url = str(production_source_url or '').strip()
+    effective_api_key = str(api_key or EIA_API_KEY_DEFAULT).strip()
+    if not effective_consumption_source_url and not effective_api_key:
+        raise ValueError('Missing EIA exports api_key. Provide api_key query parameter or set EIA_API_KEY_DEFAULT.')
+
+    if effective_consumption_source_url:
+        effective_consumption_source_url = drop_source_country_facets(effective_consumption_source_url)
+
+    if effective_production_source_url:
+        effective_production_source_url = drop_source_country_facets(effective_production_source_url)
+
+    if effective_consumption_source_url and not effective_production_source_url:
+        effective_production_source_url = override_source_activity_id(effective_consumption_source_url, 1)
+
+    if not date_to:
+        date_to = datetime.utcnow().strftime('%Y')
+
+    top_n_safe = max(1, min(int(top_n), 10))
+    consumption_signature = effective_consumption_source_url if effective_consumption_source_url else 'default-cons'
+    production_signature = effective_production_source_url if effective_production_source_url else 'default-prod'
+    cache_key = f"exports-v10:{date_from}:{date_to}:{top_n_safe}:{consumption_signature}:{production_signature}"
+    cached = EIA_WORLD_EXPORTERS_SHARE_CACHE.get(cache_key)
+    now_ts = time.time()
+    if cached and (now_ts - cached.get('computed_at', 0.0)) < EIA_WORLD_EXPORTERS_SHARE_CACHE_TTL_SECONDS:
+        return cached.get('payload')
+
+    disk_cached = load_eia_disk_cache_payload(cache_key)
+    if disk_cached:
+        EIA_WORLD_EXPORTERS_SHARE_CACHE[cache_key] = {
+            'computed_at': now_ts,
+            'payload': disk_cached,
+        }
+        return disk_cached
+
+    try:
+        if effective_consumption_source_url:
+            consumption_url = build_source_url_with_api_key(effective_consumption_source_url, effective_api_key)
+            consumption_response = requests.get(consumption_url, timeout=60)
+        else:
+            consumption_params = {
+                'api_key': effective_api_key,
+                'frequency': 'annual',
+                'data[0]': 'value',
+                'facets[activityId][]': '2',
+                'facets[productId][]': '4415',
+                'facets[unit][]': 'QBTU',
+                'start': date_from,
+                'end': date_to,
+                'sort[0][column]': 'period',
+                'sort[0][direction]': 'desc',
+                'offset': 0,
+                'length': 5000,
+            }
+            consumption_response = requests.get(EIA_INTERNATIONAL_BASE_URL, params=consumption_params, timeout=60)
+
+        if effective_production_source_url:
+            production_url = build_source_url_with_api_key(effective_production_source_url, effective_api_key)
+            production_response = requests.get(production_url, timeout=60)
+        else:
+            production_params = {
+                'api_key': effective_api_key,
+                'frequency': 'annual',
+                'data[0]': 'value',
+                'facets[activityId][]': '1',
+                'facets[productId][]': '4415',
+                'facets[unit][]': 'QBTU',
+                'start': date_from,
+                'end': date_to,
+                'sort[0][column]': 'period',
+                'sort[0][direction]': 'desc',
+                'offset': 0,
+                'length': 5000,
+            }
+            production_response = requests.get(EIA_INTERNATIONAL_BASE_URL, params=production_params, timeout=60)
+
+        consumption_response.raise_for_status()
+        production_response.raise_for_status()
+    except Exception:
+        fallback_payload = load_eia_disk_cache_payload(cache_key, max_age_seconds=None)
+        if fallback_payload:
+            EIA_WORLD_EXPORTERS_SHARE_CACHE[cache_key] = {
+                'computed_at': now_ts,
+                'payload': fallback_payload,
+            }
+            return fallback_payload
+
+        fallback_any = load_latest_eia_disk_cache_payload_by_prefix('exports-v10:')
+        if fallback_any:
+            EIA_WORLD_EXPORTERS_SHARE_CACHE[cache_key] = {
+                'computed_at': now_ts,
+                'payload': fallback_any,
+            }
+            return fallback_any
+        raise
+
+    consumption_rows = consumption_response.json().get('response', {}).get('data', [])
+    production_rows = production_response.json().get('response', {}).get('data', [])
+    if not isinstance(consumption_rows, list):
+        consumption_rows = []
+    if not isinstance(production_rows, list):
+        production_rows = []
+
+    variant = 'source' if effective_consumption_source_url else 'default'
+
+    def build_year_maps(consumption_rows_input, production_rows_input):
+        consumption_map: dict[str, dict[str, Any]] = {}
+        production_map: dict[str, dict[str, Any]] = {}
+        names: dict[str, str] = {}
+
+        for row in consumption_rows_input:
+            if not isinstance(row, dict):
+                continue
+
+            year_dt = parse_year_period(row.get('period'))
+            code = str(row.get('countryRegionId') or '').strip()
+            value = to_float_or_none(row.get('value'))
+            if year_dt is None or not code or value is None:
+                continue
+
+            year_key = year_dt.strftime('%Y')
+            bucket = consumption_map.setdefault(year_key, {})
+            bucket[code] = value
+
+            name = str(row.get('countryRegionName') or code).strip()
+            names[code] = name if name else code
+
+        for row in production_rows_input:
+            if not isinstance(row, dict):
+                continue
+
+            year_dt = parse_year_period(row.get('period'))
+            code = str(row.get('countryRegionId') or '').strip()
+            value = to_float_or_none(row.get('value'))
+            if year_dt is None or not code or value is None:
+                continue
+
+            year_key = year_dt.strftime('%Y')
+            bucket = production_map.setdefault(year_key, {})
+            bucket[code] = value
+
+            name = str(row.get('countryRegionName') or code).strip()
+            names[code] = name if name else code
+
+        return consumption_map, production_map, names
+
+    def latest_positive_candidate_count(consumption_map, production_map):
+        years = sorted(set(consumption_map.keys()) | set(production_map.keys()))
+        if not years:
+            return 0
+        latest = years[-1]
+        latest_consumption_map = consumption_map.get(latest, {})
+        latest_production_map = production_map.get(latest, {})
+        combined_codes = set(latest_consumption_map.keys()) | set(latest_production_map.keys())
+        count = 0
+        for code in combined_codes:
+            if code == 'WORL' or len(code) != 3:
+                continue
+            cons_val = to_float_or_none(latest_consumption_map.get(code))
+            prod_val = to_float_or_none(latest_production_map.get(code))
+            if cons_val is None or prod_val is None:
+                continue
+            if float(prod_val) - float(cons_val) > 0:
+                count += 1
+        return count
+
+    def max_positive_candidate_count(consumption_map, production_map):
+        years = sorted(set(consumption_map.keys()) | set(production_map.keys()))
+        max_count = 0
+        for year in years:
+            cons_map = consumption_map.get(year, {})
+            prod_map = production_map.get(year, {})
+            combined_codes = set(cons_map.keys()) | set(prod_map.keys())
+            count = 0
+            for code in combined_codes:
+                if code == 'WORL' or len(code) != 3:
+                    continue
+                cons_val = to_float_or_none(cons_map.get(code))
+                prod_val = to_float_or_none(prod_map.get(code))
+                if cons_val is None or prod_val is None:
+                    continue
+                if float(prod_val) - float(cons_val) > 0:
+                    count += 1
+            if count > max_count:
+                max_count = count
+        return max_count
+
+    consumption_by_year, production_by_year, code_name_map = build_year_maps(consumption_rows, production_rows)
+    base_candidate_count = latest_positive_candidate_count(consumption_by_year, production_by_year)
+    base_max_candidate_count = max_positive_candidate_count(consumption_by_year, production_by_year)
+
+    if effective_consumption_source_url and base_candidate_count < top_n_safe:
+        fallback_consumption_source = override_source_facets(
+            effective_consumption_source_url,
+            activity_id=2,
+            product_id=57,
+            unit='TBPD',
+        )
+        fallback_production_source_base = effective_production_source_url or effective_consumption_source_url
+        fallback_production_source = override_source_facets(
+            fallback_production_source_base,
+            activity_id=1,
+            product_id=57,
+            unit='TBPD',
+        )
+
+        try:
+            fallback_consumption_url = build_source_url_with_api_key(fallback_consumption_source, effective_api_key)
+            fallback_production_url = build_source_url_with_api_key(fallback_production_source, effective_api_key)
+            fallback_consumption_response = requests.get(fallback_consumption_url, timeout=60)
+            fallback_production_response = requests.get(fallback_production_url, timeout=60)
+            fallback_consumption_response.raise_for_status()
+            fallback_production_response.raise_for_status()
+
+            fallback_consumption_rows = fallback_consumption_response.json().get('response', {}).get('data', [])
+            fallback_production_rows = fallback_production_response.json().get('response', {}).get('data', [])
+            if not isinstance(fallback_consumption_rows, list):
+                fallback_consumption_rows = []
+            if not isinstance(fallback_production_rows, list):
+                fallback_production_rows = []
+
+            fallback_consumption_map, fallback_production_map, fallback_names = build_year_maps(
+                fallback_consumption_rows,
+                fallback_production_rows,
+            )
+            fallback_candidate_count = latest_positive_candidate_count(fallback_consumption_map, fallback_production_map)
+            fallback_max_candidate_count = max_positive_candidate_count(fallback_consumption_map, fallback_production_map)
+
+            if fallback_max_candidate_count > base_max_candidate_count:
+                consumption_by_year = fallback_consumption_map
+                production_by_year = fallback_production_map
+                code_name_map = fallback_names
+                base_candidate_count = fallback_candidate_count
+                base_max_candidate_count = fallback_max_candidate_count
+                variant = 'fallback_product57_tbpd'
+        except Exception:
+            pass
+
+    if base_candidate_count < top_n_safe:
+        focused_codes = [
+            'USA', 'SAU', 'RUS', 'CAN', 'IRQ', 'ARE', 'KWT', 'NOR', 'BRA', 'QAT', 'KAZ', 'MEX',
+            'NGA', 'DZA', 'LBY', 'AZE', 'OMN', 'VEN', 'AGO', 'ECU',
+        ]
+
+        consumption_params = {
+            'api_key': effective_api_key,
+            'frequency': 'annual',
+            'data[0]': 'value',
+            'facets[activityId][]': '2',
+            'facets[productId][]': '57',
+            'facets[unit][]': 'TBPD',
+            'facets[countryRegionId][]': focused_codes,
+            'start': date_from,
+            'end': date_to,
+            'sort[0][column]': 'period',
+            'sort[0][direction]': 'desc',
+            'offset': 0,
+            'length': 5000,
+        }
+
+        production_params = {
+            'api_key': effective_api_key,
+            'frequency': 'annual',
+            'data[0]': 'value',
+            'facets[activityId][]': '1',
+            'facets[productId][]': '57',
+            'facets[unit][]': 'TBPD',
+            'facets[countryRegionId][]': focused_codes,
+            'start': date_from,
+            'end': date_to,
+            'sort[0][column]': 'period',
+            'sort[0][direction]': 'desc',
+            'offset': 0,
+            'length': 5000,
+        }
+
+        try:
+            focused_consumption_response = requests.get(EIA_INTERNATIONAL_BASE_URL, params=consumption_params, timeout=60)
+            focused_production_response = requests.get(EIA_INTERNATIONAL_BASE_URL, params=production_params, timeout=60)
+            focused_consumption_response.raise_for_status()
+            focused_production_response.raise_for_status()
+
+            focused_consumption_rows = focused_consumption_response.json().get('response', {}).get('data', [])
+            focused_production_rows = focused_production_response.json().get('response', {}).get('data', [])
+            if not isinstance(focused_consumption_rows, list):
+                focused_consumption_rows = []
+            if not isinstance(focused_production_rows, list):
+                focused_production_rows = []
+
+            focused_consumption_map, focused_production_map, focused_names = build_year_maps(
+                focused_consumption_rows,
+                focused_production_rows,
+            )
+            focused_candidate_count = latest_positive_candidate_count(focused_consumption_map, focused_production_map)
+            focused_max_candidate_count = max_positive_candidate_count(focused_consumption_map, focused_production_map)
+
+            if focused_max_candidate_count >= base_max_candidate_count and (focused_candidate_count > 0 or base_candidate_count == 0):
+                consumption_by_year = focused_consumption_map
+                production_by_year = focused_production_map
+                code_name_map = focused_names
+                base_candidate_count = focused_candidate_count
+                base_max_candidate_count = focused_max_candidate_count
+                variant = 'focused_major_exporters_product57_tbpd'
+        except Exception:
+            pass
+
+    if not consumption_by_year and not production_by_year:
+        payload = {
+            'dataset': 'EIA International Data Browser / API v2',
+            'dataset_url': EIA_INTERNATIONAL_BASE_URL,
+            'metric': 'annual_top_net_exporters_share_of_world_net_exports',
+            'unit': 'percent',
+            'unit_code': 'PCT',
+            'frequency': 'annual',
+            'method': 'net_exports_proxy_production_minus_consumption',
+            'top_n': top_n_safe,
+            'exporters': [],
+            'start_date': None,
+            'end_date': None,
+            'points': [],
+        }
+        EIA_WORLD_EXPORTERS_SHARE_CACHE[cache_key] = {
+            'computed_at': now_ts,
+            'payload': payload,
+        }
+        save_eia_disk_cache_payload(cache_key, payload)
+        return payload
+
+    years_sorted = sorted(set(consumption_by_year.keys()) | set(production_by_year.keys()))
+
+    def compute_net_map(cons_map, prod_map):
+        combined_codes = set(cons_map.keys()) | set(prod_map.keys())
+        net_map: dict[str, float] = {}
+        for code in combined_codes:
+            cons_val = to_float_or_none(cons_map.get(code))
+            prod_val = to_float_or_none(prod_map.get(code))
+            if cons_val is None or prod_val is None:
+                continue
+            net_map[code] = float(prod_val) - float(cons_val)
+        return net_map
+
+    def net_candidates_for_year(year):
+        year_consumption = consumption_by_year.get(year, {})
+        year_production = production_by_year.get(year, {})
+        year_net = compute_net_map(year_consumption, year_production)
+        world_value = 0.0
+        candidates = []
+
+        for code, value in year_net.items():
+            if code == 'WORL' or len(code) != 3:
+                continue
+            if value is None or value <= 0:
+                continue
+            numeric_value = float(value)
+            world_value += numeric_value
+            candidates.append((code, numeric_value))
+
+        candidates.sort(key=lambda item: item[1], reverse=True)
+        return year_net, candidates, world_value
+
+    selection_year = None
+    selection_candidates: list[tuple[str, float]] = []
+    selection_world_value = 0.0
+    selection_strategy = 'latest_sufficient'
+
+    for year in reversed(years_sorted):
+        _, candidates, world_value = net_candidates_for_year(year)
+        if len(candidates) >= top_n_safe:
+            selection_year = year
+            selection_candidates = candidates
+            selection_world_value = world_value
+            break
+
+    if selection_year is None:
+        selection_strategy = 'max_positive_candidates'
+        best_year = None
+        best_candidates: list[tuple[str, float]] = []
+        best_world_value = 0.0
+        for year in years_sorted:
+            _, candidates, world_value = net_candidates_for_year(year)
+            if len(candidates) > len(best_candidates):
+                best_year = year
+                best_candidates = candidates
+                best_world_value = world_value
+            elif len(candidates) == len(best_candidates) and candidates and best_year is not None and year > best_year:
+                best_year = year
+                best_candidates = candidates
+                best_world_value = world_value
+
+        selection_year = best_year
+        selection_candidates = best_candidates
+        selection_world_value = best_world_value
+
+    selected_codes = [code for code, _ in selection_candidates[:top_n_safe]]
+    selected_set = set(selected_codes)
+    for year in years_sorted:
+        _, year_candidates, _ = net_candidates_for_year(year)
+        for code, _ in year_candidates[:top_n_safe]:
+            if code not in selected_set:
+                selected_codes.append(code)
+                selected_set.add(code)
+
+    for forced_code in ['USA', 'NOR', 'BRA']:
+        if forced_code not in selected_set:
+            selected_codes.append(forced_code)
+            selected_set.add(forced_code)
+
+    if len(selected_codes) > top_n_safe:
+        selection_strategy = f"{selection_strategy}_union_topn_over_time"
+
+    exporters = []
+    used_keys: set[str] = set()
+    for code in selected_codes:
+        label = code_name_map.get(code, code)
+        series_key = f"{slugify_series_key(label, fallback=code.lower())}_share_pct"
+        if series_key in used_keys:
+            series_key = f"{slugify_series_key(code, fallback='code')}_share_pct"
+        used_keys.add(series_key)
+        exporters.append({
+            'code': code,
+            'name': label,
+            'series_key': series_key,
+        })
+
+    points = []
+    for year in years_sorted:
+        year_consumption = consumption_by_year.get(year, {})
+        year_production = production_by_year.get(year, {})
+        year_net = compute_net_map(year_consumption, year_production)
+
+        world_value = 0.0
+        for code, value in year_net.items():
+            if code == 'WORL':
+                continue
+            if len(code) != 3:
+                continue
+            if value > 0:
+                world_value += value
+
+        point: dict[str, Any] = {
+            'date': f"{year}-01-01",
+            'world_net_exports_qbtu': world_value,
+        }
+
+        for exporter in exporters:
+            exporter_value = to_float_or_none(year_net.get(exporter['code']))
+            share = None
+            if exporter_value is not None and exporter_value > 0 and world_value not in (None, 0):
+                share = (float(exporter_value) / float(world_value)) * 100.0
+            point[exporter['series_key']] = share
+
+        points.append(point)
+
+    payload = {
+        'dataset': 'EIA International Data Browser / API v2',
+        'dataset_url': EIA_INTERNATIONAL_BASE_URL,
+        'metric': 'annual_top_net_exporters_share_of_world_net_exports',
+        'unit': 'percent',
+        'unit_code': 'PCT',
+        'frequency': 'annual',
+        'method': 'net_exports_proxy_production_minus_consumption',
+        'variant': variant,
+        'selection_strategy': selection_strategy,
+        'selection_positive_candidates': len(selection_candidates),
+        'cohort_size': len(selected_codes),
+        'top_n': top_n_safe,
+        'selection_year': selection_year,
+        'selection_world_net_exports_qbtu': selection_world_value,
+        'exporters': exporters,
+        'start_date': points[0]['date'] if points else None,
+        'end_date': points[-1]['date'] if points else None,
+        'points': points,
+    }
+
+    EIA_WORLD_EXPORTERS_SHARE_CACHE[cache_key] = {
+        'computed_at': now_ts,
+        'payload': payload,
+    }
+    save_eia_disk_cache_payload(cache_key, payload)
+    return payload
+
+
+@app.route('/api/europe-electricity-use-fossil-prices-monthly', methods=['GET'])
+def get_europe_electricity_use_fossil_prices_monthly():
+    """Return monthly Europe electricity use (total/gas/coal) and coal/gas prices."""
+    try:
+        date_from = request.args.get('date_from', '2021-01-01')
+        date_to = request.args.get('date_to', '2025-12-01')
+        entity = request.args.get('entity', 'Europe')
+        payload = fetch_europe_electricity_use_and_fossil_prices_monthly(
+            date_from=date_from,
+            date_to=date_to,
+            entity=entity,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in europe-electricity-use-fossil-prices-monthly endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/world-oil-production-monthly', methods=['GET'])
+def get_world_oil_production_monthly():
+    """Return monthly oil production for world + selected producers from EIA."""
+    try:
+        date_from = request.args.get('date_from', '2018-01')
+        date_to = request.args.get('date_to')
+        source_url = request.args.get('source_url')
+        api_key = (
+            request.args.get('api_key')
+            or request.args.get('production_api_key')
+            or EIA_API_KEY_DEFAULT
+        )
+        payload = fetch_eia_world_oil_production_monthly(
+            api_key=api_key,
+            date_from=date_from,
+            date_to=date_to,
+            source_url=source_url,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in world-oil-production-monthly endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/world-oil-consumption-annual', methods=['GET'])
+def get_world_oil_consumption_annual():
+    """Return annual world oil consumption growth (% from 2018 baseline) from EIA."""
+    try:
+        date_from = request.args.get('date_from', '2018')
+        date_to = request.args.get('date_to')
+        source_url = request.args.get('source_url')
+        api_key = (
+            request.args.get('api_key')
+            or request.args.get('consumption_api_key')
+            or EIA_CONSUMPTION_API_KEY_DEFAULT
+        )
+        payload = fetch_eia_world_oil_consumption_annual(
+            api_key=api_key,
+            date_from=date_from,
+            date_to=date_to,
+            source_url=source_url,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in world-oil-consumption-annual endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/world-oil-top-exporters-share-annual', methods=['GET'])
+def get_world_oil_top_exporters_share_annual():
+    """Return annual top exporters as share of world exports from EIA."""
+    try:
+        date_from = request.args.get('date_from', '2018')
+        date_to = request.args.get('date_to')
+        source_url = request.args.get('source_url')
+        production_source_url = request.args.get('production_source_url')
+        top_n = int(request.args.get('top_n', 5))
+        api_key = (
+            request.args.get('api_key')
+            or request.args.get('exports_api_key')
+            or EIA_API_KEY_DEFAULT
+        )
+        payload = fetch_eia_top_exporters_share_annual(
+            api_key=api_key,
+            source_url=source_url,
+            production_source_url=production_source_url,
+            date_from=date_from,
+            date_to=date_to,
+            top_n=top_n,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in world-oil-top-exporters-share-annual endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 def monthly_average_from_daily(series):
@@ -599,6 +2042,89 @@ def get_eurozone_gas_prices():
         return jsonify(payload)
     except Exception as e:
         print(f"Error in eurozone-gas-prices endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def fetch_brent_oil_annual(start_year=2002, end_year=None):
+    """Fetch annual average Brent crude oil prices (USD per barrel) from Yahoo Finance chart API (BZ=F)."""
+    if end_year is None:
+        end_year = datetime.utcnow().year
+
+    start_dt = datetime(int(start_year), 1, 1, tzinfo=timezone.utc)
+    end_dt = datetime(int(end_year) + 1, 1, 1, tzinfo=timezone.utc)
+    period1 = int(start_dt.timestamp())
+    period2 = int(end_dt.timestamp()) - 1
+
+    buckets = {}
+    try:
+        url = 'https://query1.finance.yahoo.com/v8/finance/chart/BZ=F'
+        params = {
+            'period1': period1,
+            'period2': period2,
+            'interval': '1mo',
+            'events': 'history',
+            'includeAdjustedClose': 'true',
+        }
+        headers = {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': 'application/json',
+        }
+        response = requests.get(url, params=params, headers=headers, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        result = ((payload.get('chart') or {}).get('result') or [None])[0] or {}
+        timestamps = result.get('timestamp') or []
+        quote = (((result.get('indicators') or {}).get('quote') or [None])[0] or {})
+        closes = quote.get('close') or []
+
+        for ts, close in zip(timestamps, closes):
+            if close is None:
+                continue
+            try:
+                price = float(close)
+                if not np.isfinite(price):
+                    continue
+                year = int(datetime.fromtimestamp(int(ts), tz=timezone.utc).year)
+                buckets.setdefault(year, []).append(price)
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"Brent Yahoo chart API fetch failed: {e}")
+
+    years = sorted(buckets.keys())
+    points = [
+        {
+            'year': int(year),
+            'brent_usd_per_barrel': (sum(buckets[year]) / len(buckets[year])) if buckets[year] else None,
+        }
+        for year in years
+    ]
+
+    return {
+        'series_id': 'BZ=F',
+        'label': 'Brent crude oil futures (Yahoo Finance chart API)',
+        'unit': 'USD per barrel',
+        'frequency': 'A',
+        'aggregation': 'Annual average of monthly close observations',
+        'source': 'Yahoo Finance chart API',
+        'start_year': years[0] if years else None,
+        'end_year': years[-1] if years else None,
+        'points': points,
+    }
+
+
+@app.route('/api/brent-oil-annual', methods=['GET'])
+def get_brent_oil_annual():
+    """Return annual Brent oil prices (USD per barrel)."""
+    try:
+        start_year = int(request.args.get('start_year', 2002))
+        end_year = int(request.args.get('end_year', datetime.utcnow().year))
+        payload = fetch_brent_oil_annual(start_year=start_year, end_year=end_year)
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in brent-oil-annual endpoint: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -2384,6 +3910,495 @@ def get_eurozone_imports_energy_weights():
         return jsonify({'error': str(e)}), 500
 
 
+def _find_excel_file(base_dir: Path, explicit_names: list[str], glob_patterns: list[str]) -> Path | None:
+    for name in explicit_names:
+        candidate = base_dir / name
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    for pattern in glob_patterns:
+        matches = sorted(base_dir.glob(pattern))
+        for match in matches:
+            if match.is_file() and match.suffix.lower() in {'.xlsx', '.xls'}:
+                return match
+
+    return None
+
+
+def _extract_monthly_value_eur_series_from_workbook(
+    file_path: Path,
+    product_hint: str,
+    flow_hint: str,
+    partner_hint: str | None = None,
+    preferred_sheet: str | None = None,
+) -> tuple[dict[str, float], str]:
+    xls = pd.ExcelFile(file_path)
+
+    flow_hint_norm = flow_hint.strip().lower()
+    if flow_hint_norm not in {'import', 'export'}:
+        raise ValueError("flow_hint must be 'import' or 'export'")
+
+    partner_hint_norm = partner_hint.strip().lower() if partner_hint else None
+    preferred_sheet_norm = preferred_sheet.strip().lower() if preferred_sheet else None
+
+    for sheet_name_raw in xls.sheet_names:
+        sheet_name = str(sheet_name_raw)
+        if sheet_name.strip().lower() == 'summary':
+            continue
+        if preferred_sheet_norm and sheet_name.strip().lower() != preferred_sheet_norm:
+            continue
+
+        df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
+        if df.empty:
+            continue
+
+        flattened_text = ' '.join(
+            text for text in (
+                str(value).strip().lower()
+                for value in df.values.ravel().tolist()
+            )
+            if text and text != 'nan'
+        )
+
+        if product_hint.lower() not in flattened_text:
+            continue
+        if flow_hint_norm not in flattened_text:
+            continue
+        if partner_hint_norm and partner_hint_norm not in flattened_text:
+            continue
+        if 'value_eur' not in flattened_text:
+            continue
+
+        time_row_idx = None
+        monthly_cols: list[int] = []
+        monthly_labels: list[str] = []
+
+        for row_idx in range(min(len(df), 30)):
+            row_values = [str(v).strip() for v in df.iloc[row_idx].tolist()]
+            if not any(v.upper() == 'TIME' for v in row_values):
+                continue
+
+            candidate_cols = []
+            candidate_labels = []
+            for col_idx, cell in enumerate(row_values):
+                if re.match(r'^\d{4}-\d{2}$', cell):
+                    candidate_cols.append(col_idx)
+                    candidate_labels.append(cell)
+
+            if len(candidate_cols) >= 12:
+                time_row_idx = row_idx
+                monthly_cols = candidate_cols
+                monthly_labels = candidate_labels
+                break
+
+        if time_row_idx is None or not monthly_cols:
+            continue
+
+        best_row_idx = None
+        best_count = -1
+
+        for row_idx in range(time_row_idx + 1, len(df)):
+            numeric = pd.to_numeric(df.iloc[row_idx, monthly_cols], errors='coerce')
+            count = int(numeric.notna().sum())
+            if count > best_count:
+                best_count = count
+                best_row_idx = row_idx
+
+        if best_row_idx is None or best_count < 12:
+            continue
+
+        monthly_series: dict[str, float] = {}
+        for col_idx, period in zip(monthly_cols, monthly_labels):
+            value = pd.to_numeric(df.iat[best_row_idx, col_idx], errors='coerce')
+            if pd.isna(value):
+                continue
+            monthly_series[period] = float(value)
+
+        if monthly_series:
+            return monthly_series, sheet_name
+
+    raise RuntimeError(
+        f"Could not parse monthly VALUE_EUR {flow_hint_norm} series for product '{product_hint}' in file {file_path.name}"
+    )
+
+
+def _extract_series_from_workbooks(
+    workbooks: list[Path],
+    product_hint: str,
+    flow_hint: str,
+    partner_hint: str | None = None,
+    preferred_sheet: str | None = None,
+) -> tuple[dict[str, float], str, str]:
+    errors: list[str] = []
+    for workbook in workbooks:
+        try:
+            monthly, sheet = _extract_monthly_value_eur_series_from_workbook(
+                workbook,
+                product_hint=product_hint,
+                flow_hint=flow_hint,
+                partner_hint=partner_hint,
+                preferred_sheet=preferred_sheet,
+            )
+            return monthly, workbook.name, sheet
+        except Exception as exc:
+            errors.append(f"{workbook.name}: {exc}")
+
+    raise RuntimeError(
+        f"Could not locate series product='{product_hint}', flow='{flow_hint}'"
+        + (f", partner='{partner_hint}'" if partner_hint else '')
+        + (f", preferred_sheet='{preferred_sheet}'" if preferred_sheet else '')
+        + f". Attempts: {' | '.join(errors)}"
+    )
+
+
+def _aggregate_monthly_to_quarterly(monthly_series: dict[str, float]) -> dict[str, float]:
+    quarterly: dict[str, float] = {}
+
+    for month_code, value in monthly_series.items():
+        if not re.match(r'^\d{4}-\d{2}$', str(month_code)):
+            continue
+
+        year_str, month_str = str(month_code).split('-')
+        month_num = int(month_str)
+        if month_num < 1 or month_num > 12:
+            continue
+
+        quarter = ((month_num - 1) // 3) + 1
+        period = f'Q{quarter}/{year_str}'
+        quarterly[period] = quarterly.get(period, 0.0) + float(value)
+
+    return quarterly
+
+
+def fetch_eurozone_petrochem_imports_from_uploaded_excels(
+    partner_scope: str = 'world',
+    sheet_overrides: dict[str, str] | None = None,
+):
+    base_dir = Path(__file__).resolve().parent
+    sheet_overrides = sheet_overrides or {}
+
+    organic_file = _find_excel_file(
+        base_dir,
+        explicit_names=['organic_chemical.xlsx'],
+        glob_patterns=['*organic*chem*.xlsx', '*organic*.xlsx']
+    )
+    plastics_file = _find_excel_file(
+        base_dir,
+        explicit_names=['plastics_in_prmary_forms.xlsx', 'plastics_in_primary_forms.xlsx'],
+        glob_patterns=['*plastics*primary*form*.xlsx', '*plastic*form*.xlsx', '*plastics*.xlsx']
+    )
+
+    if organic_file is None:
+        raise FileNotFoundError('organic_chemical.xlsx was not found in the project folder.')
+    if plastics_file is None:
+        raise FileNotFoundError('plastics_in_prmary_forms.xlsx was not found in the project folder.')
+
+    partner_scope_norm = (partner_scope or 'world').strip().lower()
+    partner_scope_map = {
+        'world': 'all countries of the world',
+        'extra': 'extra-eu27 (from 2020)',
+        'intra': 'intra-eu27 (from 2020)',
+        'auto': None,
+    }
+    if partner_scope_norm not in partner_scope_map:
+        raise ValueError("partner_scope must be one of: world, extra, intra, auto")
+    partner_hint = partner_scope_map[partner_scope_norm]
+
+    workbooks = [organic_file, plastics_file]
+
+    sitc51_imports_monthly, sitc51_imports_file, sitc51_imports_sheet = _extract_series_from_workbooks(
+        workbooks,
+        product_hint='organic chemicals',
+        flow_hint='import',
+        partner_hint=partner_hint,
+        preferred_sheet=sheet_overrides.get('sitc51_imports_sheet'),
+    )
+
+    sitc51_exports_monthly: dict[str, float] = {}
+    sitc51_exports_sheet: str | None = None
+    sitc51_exports_file: str | None = None
+    try:
+        sitc51_exports_monthly, sitc51_exports_file, sitc51_exports_sheet = _extract_series_from_workbooks(
+            workbooks,
+            product_hint='organic chemicals',
+            flow_hint='export',
+            partner_hint=partner_hint,
+            preferred_sheet=sheet_overrides.get('sitc51_exports_sheet'),
+        )
+    except Exception:
+        sitc51_exports_monthly = {}
+        sitc51_exports_sheet = None
+        sitc51_exports_file = None
+
+    sitc57_imports_monthly, sitc57_imports_file, sitc57_imports_sheet = _extract_series_from_workbooks(
+        workbooks,
+        product_hint='plastics in primary forms',
+        flow_hint='import',
+        partner_hint=partner_hint,
+        preferred_sheet=sheet_overrides.get('sitc57_imports_sheet'),
+    )
+
+    sitc57_exports_monthly: dict[str, float] = {}
+    sitc57_exports_sheet: str | None = None
+    sitc57_exports_file: str | None = None
+    try:
+        sitc57_exports_monthly, sitc57_exports_file, sitc57_exports_sheet = _extract_series_from_workbooks(
+            workbooks,
+            product_hint='plastics in primary forms',
+            flow_hint='export',
+            partner_hint=partner_hint,
+            preferred_sheet=sheet_overrides.get('sitc57_exports_sheet'),
+        )
+    except Exception:
+        sitc57_exports_monthly = {}
+        sitc57_exports_sheet = None
+        sitc57_exports_file = None
+
+    all_months = sorted(
+        set(sitc51_imports_monthly.keys())
+        | set(sitc51_exports_monthly.keys())
+        | set(sitc57_imports_monthly.keys())
+        | set(sitc57_exports_monthly.keys())
+    )
+
+    combined_imports_monthly: dict[str, float] = {}
+    combined_exports_monthly: dict[str, float] = {}
+    for month_code in all_months:
+        combined_imports_monthly[month_code] = (
+            float(sitc51_imports_monthly.get(month_code, 0.0))
+            + float(sitc57_imports_monthly.get(month_code, 0.0))
+        )
+        combined_exports_monthly[month_code] = (
+            float(sitc51_exports_monthly.get(month_code, 0.0))
+            + float(sitc57_exports_monthly.get(month_code, 0.0))
+        )
+
+    imports_quarterly = _aggregate_monthly_to_quarterly(combined_imports_monthly)
+    exports_quarterly = _aggregate_monthly_to_quarterly(combined_exports_monthly)
+
+    periods = sorted(
+        set(imports_quarterly.keys()) | set(exports_quarterly.keys()),
+        key=lambda p: (int(p.split('/')[1]), int(p[1]))
+    )
+
+    points = [
+        {
+            'period': period,
+            'imports_eur': imports_quarterly.get(period),
+            'exports_eur': exports_quarterly.get(period),
+            'net_imports_eur': (
+                (imports_quarterly.get(period) or 0.0)
+                - (exports_quarterly.get(period) or 0.0)
+            ),
+        }
+        for period in periods
+    ]
+
+    start_year = int(periods[0].split('/')[1]) if periods else None
+    end_year = int(periods[-1].split('/')[1]) if periods else None
+
+    return {
+        'source': 'uploaded_excel_files',
+        'definition_label': (
+            f"SITC51 + SITC57 from uploaded Excel files "
+            f"(imports, exports, net imports; partner scope: {partner_scope_norm})"
+        ),
+        'partner_scope': partner_scope_norm,
+        'partner_filter_used': partner_hint,
+        'files': {
+            'sitc51_file': organic_file.name,
+            'sitc57_file': plastics_file.name,
+            'sitc51_imports_file_used': sitc51_imports_file,
+            'sitc51_exports_file_used': sitc51_exports_file,
+            'sitc57_imports_file_used': sitc57_imports_file,
+            'sitc57_exports_file_used': sitc57_exports_file,
+            'sitc51_imports_sheet': sitc51_imports_sheet,
+            'sitc51_exports_sheet': sitc51_exports_sheet,
+            'sitc57_imports_sheet': sitc57_imports_sheet,
+            'sitc57_exports_sheet': sitc57_exports_sheet,
+        },
+        'notes': [
+            'Values are used as provided in Excel (raw VALUE_EUR units; no thousand/million/billion scaling).',
+            'If an export flow sheet is missing in uploaded files, missing exports are treated as 0 for net calculation.',
+        ],
+        'unit': 'EUR',
+        'frequency': 'Q',
+        'aggregation': 'Quarterly sum of monthly VALUE_EUR values (raw units from Excel; no scaling)',
+        'start_year': start_year,
+        'end_year': end_year,
+        'points': points,
+    }
+
+
+@app.route('/api/eurozone-petrochem-imports', methods=['GET'])
+def get_eurozone_petrochem_imports():
+    """Return quarterly Eurozone petrochemicals imports from uploaded SITC51/SITC57 Excel files."""
+    try:
+        partner_scope = (request.args.get('partner_scope') or 'world').strip().lower()
+        sheet_overrides = {
+            'sitc51_imports_sheet': request.args.get('sitc51_imports_sheet') or '',
+            'sitc51_exports_sheet': request.args.get('sitc51_exports_sheet') or '',
+            'sitc57_imports_sheet': request.args.get('sitc57_imports_sheet') or '',
+            'sitc57_exports_sheet': request.args.get('sitc57_exports_sheet') or '',
+        }
+        sheet_overrides = {k: v for k, v in sheet_overrides.items() if str(v).strip()}
+
+        payload = fetch_eurozone_petrochem_imports_from_uploaded_excels(
+            partner_scope=partner_scope,
+            sheet_overrides=sheet_overrides,
+        )
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in eurozone-petrochem-imports endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def fetch_eurostat_country_petrochem_imports_annual(
+    country_codes: list[str] | None = None,
+    partner: str = 'WORLD',
+    sitc_code: str = 'SITC5',
+):
+    """Fetch annual petrochemical imports for selected countries from Eurostat (ext_lt_intertrd)."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ext_lt_intertrd'
+    allowed_countries = {
+        'FR': 'France',
+        'DE': 'Germany',
+        'BE': 'Belgium',
+        'IT': 'Italy',
+        'ES': 'Spain',
+    }
+
+    if country_codes is None:
+        country_codes = ['FR', 'DE', 'BE', 'IT']
+
+    normalized_codes = []
+    for code in country_codes:
+        code_norm = str(code).strip().upper()
+        if not code_norm:
+            continue
+        if code_norm not in allowed_countries:
+            raise ValueError(f"Unsupported country code '{code_norm}'. Allowed: {', '.join(sorted(allowed_countries.keys()))}")
+        normalized_codes.append(code_norm)
+
+    if not normalized_codes:
+        raise ValueError('No valid country codes provided.')
+
+    partner_norm = str(partner or 'WORLD').strip().upper()
+
+    def fetch_country_series(geo_code: str):
+        params = {
+            'lang': 'en',
+            'freq': 'A',
+            'geo': geo_code,
+            'partner': partner_norm,
+            'indic_et': 'MIO_IMP_VAL',
+            'sitc06': sitc_code,
+        }
+
+        payload = None
+        last_error = None
+        for attempt in range(1, 3):
+            try:
+                response = requests.get(base_url, params=params, timeout=30)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"Country petrochem imports fetch failed (attempt {attempt}/2, geo={geo_code}): {e}")
+                if attempt < 2:
+                    time.sleep(0.8 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"Country petrochem imports fetch failed for geo={geo_code}: {last_error}")
+
+        time_index = payload.get('dimension', {}).get('time', {}).get('category', {}).get('index', {})
+        values = payload.get('value', {})
+
+        points = []
+        for year_code, year_pos in time_index.items():
+            year_str = str(year_code)
+            if not year_str.isdigit():
+                continue
+            value = values.get(str(year_pos))
+            if value is None:
+                continue
+            points.append({
+                'year': int(year_str),
+                'imports_eur': float(value) * 1_000_000.0,
+            })
+
+        points.sort(key=lambda item: item['year'])
+        return {
+            'geo': geo_code,
+            'country': allowed_countries[geo_code],
+            'points': points,
+        }
+
+    series = []
+    all_years = set()
+    for geo_code in normalized_codes:
+        country_series = fetch_country_series(geo_code)
+        series.append(country_series)
+        for point in country_series['points']:
+            all_years.add(point['year'])
+
+    years = sorted(all_years)
+
+    brent_payload = fetch_brent_oil_annual(
+        start_year=years[0] if years else 2002,
+        end_year=years[-1] if years else datetime.utcnow().year,
+    )
+    brent_by_year = {
+        int(point['year']): float(point['brent_usd_per_barrel'])
+        for point in (brent_payload.get('points') or [])
+        if point.get('year') is not None and point.get('brent_usd_per_barrel') is not None
+    }
+
+    return {
+        'source': 'Eurostat',
+        'dataset': 'ext_lt_intertrd',
+        'sitc06': sitc_code,
+        'partner': partner_norm,
+        'indicator': 'MIO_IMP_VAL',
+        'frequency': 'A',
+        'unit': 'EUR',
+        'notes': 'Country values are annual imports and converted from million EUR to EUR.',
+        'years': years,
+        'series': series,
+        'brent': {
+            'series_id': brent_payload.get('series_id'),
+            'unit': brent_payload.get('unit'),
+            'by_year': brent_by_year,
+        },
+    }
+
+
+@app.route('/api/petrochem-country-imports', methods=['GET'])
+def get_petrochem_country_imports():
+    """Return annual petrochemicals imports by country."""
+    try:
+        countries_arg = request.args.get('countries') or 'FR,DE,BE,IT'
+        countries = [item.strip().upper() for item in countries_arg.split(',') if item.strip()]
+        partner = request.args.get('partner') or 'WORLD'
+        sitc_code = request.args.get('sitc06') or 'SITC5'
+        payload = fetch_eurostat_country_petrochem_imports_annual(
+            country_codes=countries,
+            partner=partner,
+            sitc_code=sitc_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in petrochem-country-imports endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 def fetch_world_bank_indicator_series(country_code, indicator_code):
     """Fetch annual World Bank indicator values with basic retry/backoff."""
     url = f"https://api.worldbank.org/v2/country/{country_code}/indicator/{indicator_code}"
@@ -2491,7 +4506,310 @@ def get_us_italy_imports_fuel_proxy():
         return jsonify({'error': str(e)}), 500
 
 
-def fetch_census_hs_annual_sum(flow, year, value_field, commodity_code=None, comm_lvl=None):
+def fetch_eurostat_country_imports_fuel_real_annual(geo='IT'):
+    """Return annual country imports/exports and net-imports composition from Eurostat (non-proxy)."""
+    base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ext_lt_intertrd'
+    geo_code = str(geo or 'IT').strip().upper()
+    country_labels = {
+        'IT': 'Italy',
+        'DE': 'Germany',
+        'FR': 'France',
+        'ES': 'Spain',
+        'BE': 'Belgium',
+    }
+    if geo_code not in country_labels:
+        raise ValueError(f"Unsupported geo '{geo_code}'. Allowed: {', '.join(country_labels.keys())}")
+
+    now_ts = time.time()
+    cached = EUROSTAT_COUNTRY_FUEL_CACHE.get(geo_code)
+    if cached and (now_ts - cached.get('computed_at', 0)) < EUROSTAT_COUNTRY_FUEL_CACHE_TTL_SECONDS:
+        return cached['payload']
+
+    def fetch_trade_series(sitc_code, indicator_code):
+        params = {
+            'lang': 'en',
+            'freq': 'A',
+            'geo': geo_code,
+            'partner': 'WORLD',
+            'indic_et': indicator_code,
+            'sitc06': sitc_code,
+        }
+
+        payload = None
+        last_error = None
+        for attempt in range(1, 3):
+            try:
+                response = requests.get(base_url, params=params, timeout=20)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except Exception as e:
+                last_error = e
+                print(f"{geo_code} Eurostat fetch failed (attempt {attempt}/2, sitc={sitc_code}, indic={indicator_code}): {e}")
+                if attempt < 2:
+                    time.sleep(1.0 * attempt)
+
+        if payload is None:
+            raise RuntimeError(f"{geo_code} Eurostat fetch failed for sitc={sitc_code}, indic={indicator_code}: {last_error}")
+
+        time_index = payload.get('dimension', {}).get('time', {}).get('category', {}).get('index', {})
+        values = payload.get('value', {})
+
+        annual = {}
+        for year_code, year_pos in time_index.items():
+            year_str = str(year_code)
+            if not year_str.isdigit():
+                continue
+            value = values.get(str(year_pos))
+            if value is None:
+                continue
+            annual[int(year_str)] = float(value)
+        return annual
+
+    def fetch_eurozone_oil_gas_split_annual():
+        cache_key = 'EA20_EXT_EU27_2020_IMP_TRD_VAL'
+        now_local = time.time()
+        cached_split = EUROZONE_OIL_GAS_SPLIT_CACHE.get(cache_key)
+        if cached_split and (now_local - cached_split.get('computed_at', 0)) < EUROZONE_OIL_GAS_SPLIT_CACHE_TTL_SECONDS:
+            return cached_split.get('split_by_year', {})
+
+        base_short = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ext_st_eu27_2020sitc'
+
+        def fetch_monthly_series_short(sitc_code):
+            params = {
+                'lang': 'en',
+                'stk_flow': 'IMP',
+                'indic_et': 'TRD_VAL',
+                'partner': 'EXT_EU27_2020',
+                'sitc06': sitc_code,
+            }
+
+            payload = None
+            last_error = None
+            for attempt in range(1, 3):
+                try:
+                    response = requests.get(base_short, params=params, timeout=20)
+                    response.raise_for_status()
+                    payload = response.json()
+                    break
+                except Exception as e:
+                    last_error = e
+                    print(f"Eurozone split fetch failed (attempt {attempt}/2, sitc={sitc_code}): {e}")
+                    if attempt < 2:
+                        time.sleep(0.8 * attempt)
+
+            if payload is None:
+                raise RuntimeError(f"Eurozone split fetch failed for sitc={sitc_code}: {last_error}")
+
+            time_index = payload.get('dimension', {}).get('time', {}).get('category', {}).get('index', {})
+            values = payload.get('value', {})
+            monthly = {}
+            for month_code, month_pos in time_index.items():
+                value = values.get(str(month_pos))
+                if value is None:
+                    continue
+                monthly[str(month_code)] = float(value)
+            return monthly
+
+        energy_monthly = fetch_monthly_series_short('SITC3')
+        oil_monthly = fetch_monthly_series_short('SITC33')
+
+        annual_energy = {}
+        annual_oil = {}
+
+        for month_code, value in energy_monthly.items():
+            year = str(month_code).split('-')[0]
+            if year.isdigit():
+                y = int(year)
+                annual_energy[y] = annual_energy.get(y, 0.0) + float(value)
+
+        for month_code, value in oil_monthly.items():
+            year = str(month_code).split('-')[0]
+            if year.isdigit():
+                y = int(year)
+                annual_oil[y] = annual_oil.get(y, 0.0) + float(value)
+
+        split_by_year = {}
+        years = sorted(set(annual_energy.keys()) | set(annual_oil.keys()))
+        for year in years:
+            energy_val = annual_energy.get(year)
+            oil_val = annual_oil.get(year)
+            if energy_val is None or oil_val is None or energy_val <= 0:
+                continue
+            oil_ratio = max(0.0, min(1.0, float(oil_val) / float(energy_val)))
+            split_by_year[int(year)] = {
+                'oil_ratio_in_fuels': oil_ratio,
+                'gas_ratio_in_fuels': 1.0 - oil_ratio,
+            }
+
+        EUROZONE_OIL_GAS_SPLIT_CACHE[cache_key] = {
+            'computed_at': now_local,
+            'split_by_year': split_by_year,
+        }
+        return split_by_year
+
+    series_specs = {
+        'total_imp_map': ('TOTAL', 'MIO_IMP_VAL'),
+        'total_exp_map': ('TOTAL', 'MIO_EXP_VAL'),
+        'energy_imp_map': ('SITC3', 'MIO_IMP_VAL'),
+        'energy_exp_map': ('SITC3', 'MIO_EXP_VAL'),
+        'oil_imp_map': ('SITC33', 'MIO_IMP_VAL'),
+        'oil_exp_map': ('SITC33', 'MIO_EXP_VAL'),
+    }
+
+    series_results: dict[str, dict[int, float]] = {}
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            key: executor.submit(fetch_trade_series, sitc_code, indicator_code)
+            for key, (sitc_code, indicator_code) in series_specs.items()
+        }
+        for key, future in futures.items():
+            try:
+                series_results[key] = future.result()
+            except Exception as e:
+                print(f"{geo_code} Eurostat parallel fetch task failed ({key}): {e}")
+                series_results[key] = {}
+
+    total_imp_map = series_results.get('total_imp_map', {})
+    total_exp_map = series_results.get('total_exp_map', {})
+    energy_imp_map = series_results.get('energy_imp_map', {})
+    energy_exp_map = series_results.get('energy_exp_map', {})
+    oil_imp_map = series_results.get('oil_imp_map', {})
+    oil_exp_map = series_results.get('oil_exp_map', {})
+    eurozone_split = fetch_eurozone_oil_gas_split_annual()
+
+    years = sorted(
+        set(total_imp_map.keys()) | set(total_exp_map.keys()) |
+        set(energy_imp_map.keys()) | set(energy_exp_map.keys()) |
+        set(oil_imp_map.keys()) | set(oil_exp_map.keys())
+    )
+    points = []
+    for year in years:
+        total_imports = total_imp_map.get(year)
+        total_exports = total_exp_map.get(year)
+        energy_imports = energy_imp_map.get(year)
+        energy_exports = energy_exp_map.get(year)
+        oil_imports = oil_imp_map.get(year)
+        oil_exports = oil_exp_map.get(year)
+
+        split_method = 'direct'
+        if oil_imports is None and energy_imports is not None:
+            split = eurozone_split.get(int(year))
+            if split:
+                oil_imports = float(energy_imports) * float(split['oil_ratio_in_fuels'])
+                split_method = 'estimated_from_eurozone_fuel_mix'
+
+        if oil_exports is None and energy_exports is not None:
+            split = eurozone_split.get(int(year))
+            if split:
+                oil_exports = float(energy_exports) * float(split['oil_ratio_in_fuels'])
+
+        if split_method == 'direct' and oil_imports is None and energy_imports is not None:
+            split_method = 'combined_fuels_only'
+
+        total_net = (
+            (total_imports if total_imports is not None else 0.0) -
+            (total_exports if total_exports is not None else 0.0)
+        ) if (total_imports is not None or total_exports is not None) else None
+
+        energy_net = (
+            (energy_imports if energy_imports is not None else 0.0) -
+            (energy_exports if energy_exports is not None else 0.0)
+        ) if (energy_imports is not None or energy_exports is not None) else None
+
+        oil_net = (
+            (oil_imports if oil_imports is not None else 0.0) -
+            (oil_exports if oil_exports is not None else 0.0)
+        ) if (oil_imports is not None or oil_exports is not None) else None
+
+        gas_net = (energy_net - oil_net) if (energy_net is not None and oil_net is not None) else None
+
+        gas_imports = (energy_imports - oil_imports) if (energy_imports is not None and oil_imports is not None) else None
+
+        if total_imports is None or total_imports <= 0:
+            oil_share = None
+            gas_share = None
+            energy_share = None
+            other_share = None
+        else:
+            oil_share = (oil_imports / total_imports) * 100.0 if oil_imports is not None else None
+            gas_share = (gas_imports / total_imports) * 100.0 if gas_imports is not None else None
+            energy_share = (energy_imports / total_imports) * 100.0 if energy_imports is not None else None
+            other_share = (100.0 - energy_share) if energy_share is not None else None
+
+        points.append({
+            'year': int(year),
+            'total_imports_million_eur': total_imports,
+            'total_exports_million_eur': total_exports,
+            'total_net_imports_million_eur': total_net,
+            'energy_imports_million_eur': energy_imports,
+            'energy_exports_million_eur': energy_exports,
+            'energy_net_imports_million_eur': energy_net,
+            'oil_imports_million_eur': oil_imports,
+            'oil_exports_million_eur': oil_exports,
+            'oil_net_imports_million_eur': oil_net,
+            'gas_imports_million_eur': gas_imports,
+            'gas_net_imports_million_eur': gas_net,
+            'fuel_share_pct': energy_share,
+            'oil_share_pct': oil_share,
+            'gas_share_pct': gas_share,
+            'other_share_pct': other_share,
+            'oil_gas_split_method': split_method,
+        })
+
+    payload = {
+        'source': 'Eurostat (non-proxy)',
+        'dataset': 'ext_lt_intertrd',
+        'geo': geo_code,
+        'country_label': country_labels[geo_code],
+        'partner': 'WORLD',
+        'indic_et': 'MIO_IMP_VAL & MIO_EXP_VAL',
+        'frequency': 'A',
+        'unit': 'million EUR',
+        'net_imports_method': 'net imports = imports - exports',
+        'share_method': 'Shares are based on imports only (component imports / total imports).',
+        'oil_gas_split_note': 'Oil/gas split is estimated from Eurozone annual fuel mix when country-level oil code is unavailable.',
+        'start_year': years[0] if years else None,
+        'end_year': years[-1] if years else None,
+        'points': points,
+    }
+
+    EUROSTAT_COUNTRY_FUEL_CACHE[geo_code] = {
+        'computed_at': now_ts,
+        'payload': payload,
+    }
+
+    return payload
+
+
+@app.route('/api/eurostat-country-imports-fuel-real', methods=['GET'])
+def get_eurostat_country_imports_fuel_real():
+    """Return annual country real imports + oil/gas composition from Eurostat."""
+    try:
+        geo = request.args.get('geo', 'IT')
+        payload = fetch_eurostat_country_imports_fuel_real_annual(geo=geo)
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in eurostat-country-imports-fuel-real endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/italy-imports-fuel-real', methods=['GET'])
+def get_italy_imports_fuel_real():
+    """Return annual Italy real imports + oil/gas composition from Eurostat."""
+    try:
+        payload = fetch_eurostat_country_imports_fuel_real_annual(geo='IT')
+        return jsonify(payload)
+    except Exception as e:
+        print(f"Error in italy-imports-fuel-real endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def fetch_census_hs_annual_sum(flow, year, value_field, commodity_code=None, comm_lvl=None, timeout_seconds=25, max_attempts=2):
     """Fetch annual U.S. Census trade HS values and sum across returned rows."""
     if flow not in {'imports', 'exports'}:
         raise ValueError("flow must be 'imports' or 'exports'")
@@ -2514,9 +4832,9 @@ def fetch_census_hs_annual_sum(flow, year, value_field, commodity_code=None, com
 
     payload = None
     last_error = None
-    for attempt in range(1, 4):
+    for attempt in range(1, max_attempts + 1):
         try:
-            response = requests.get(base_url, params=params, timeout=45)
+            response = requests.get(base_url, params=params, timeout=timeout_seconds)
             if response.status_code == 204:
                 return 0.0
             response.raise_for_status()
@@ -2524,8 +4842,8 @@ def fetch_census_hs_annual_sum(flow, year, value_field, commodity_code=None, com
             break
         except Exception as e:
             last_error = e
-            print(f"Census HS fetch failed (attempt {attempt}/3, flow={flow}, year={year}, commodity={commodity_code}): {e}")
-            if attempt < 3:
+            print(f"Census HS fetch failed (attempt {attempt}/{max_attempts}, flow={flow}, year={year}, commodity={commodity_code}): {e}")
+            if attempt < max_attempts:
                 time.sleep(1.2 * attempt)
 
     if payload is None:
@@ -2554,7 +4872,7 @@ def fetch_census_hs_annual_sum(flow, year, value_field, commodity_code=None, com
     return total
 
 
-def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None):
+def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None, allow_slow_fallback=False):
     """Return annual U.S. real (non-proxy) oil/gas net-imports composition from Census HS trade values."""
     if end_year is None:
         end_year = datetime.now(timezone.utc).year - 1
@@ -2570,29 +4888,40 @@ def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None):
 
         payload = None
         last_error = None
-        for attempt in range(1, 4):
+        for attempt in range(1, 2):
             try:
-                response = requests.get(base_url, params=params, timeout=60)
+                response = requests.get(base_url, params=params, timeout=12)
                 response.raise_for_status()
                 payload = response.json()
                 break
             except Exception as e:
                 last_error = e
-                print(f"Census bulk fetch failed (attempt {attempt}/3, flow={flow}, code={commodity_code}): {e}")
+                print(f"Census bulk fetch failed (attempt {attempt}/1, flow={flow}, code={commodity_code}): {e}")
                 status_code = getattr(getattr(e, 'response', None), 'status_code', None)
-                if status_code == 500:
+                if status_code in {429, 500, 502, 503, 504}:
                     break
-                if attempt < 3:
+                if attempt < 1:
                     time.sleep(1.2 * attempt)
 
         if payload is None:
-            # Fallback path: fetch year-by-year totals for the affected code
+            if not allow_slow_fallback:
+                print(f"Skipping slow year-by-year fallback for flow={flow}, code={commodity_code}")
+                return {}
+
             print(f"Falling back to year-by-year Census fetch for flow={flow}, code={commodity_code}")
             annual_fallback = {}
             annual_field = 'GEN_VAL_YR' if flow == 'imports' else 'ALL_VAL_YR'
             for year in range(int(start_year), int(end_year) + 1):
                 try:
-                    value = fetch_census_hs_annual_sum(flow, year, annual_field, commodity_code=commodity_code, comm_lvl='HS4')
+                    value = fetch_census_hs_annual_sum(
+                        flow,
+                        year,
+                        annual_field,
+                        commodity_code=commodity_code,
+                        comm_lvl='HS4',
+                        timeout_seconds=12,
+                        max_attempts=1,
+                    )
                 except Exception:
                     value = 0.0
                 annual_fallback[year] = annual_fallback.get(year, 0.0) + float(value or 0.0)
@@ -2623,12 +4952,34 @@ def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None):
         return annual
 
     # Oil: HS 2709 (crude) + 2710 (refined oils), Gas: HS 2711 (petroleum gases)
-    oil_imports = fetch_census_annual_series('imports', '2709', 'GEN_VAL_MO')
-    oil_imports_2 = fetch_census_annual_series('imports', '2710', 'GEN_VAL_MO')
-    oil_exports = fetch_census_annual_series('exports', '2709', 'ALL_VAL_MO')
-    oil_exports_2 = fetch_census_annual_series('exports', '2710', 'ALL_VAL_MO')
-    gas_imports = fetch_census_annual_series('imports', '2711', 'GEN_VAL_MO')
-    gas_exports = fetch_census_annual_series('exports', '2711', 'ALL_VAL_MO')
+    census_tasks = {
+        'oil_imports_2709': ('imports', '2709', 'GEN_VAL_MO'),
+        'oil_imports_2710': ('imports', '2710', 'GEN_VAL_MO'),
+        'oil_exports_2709': ('exports', '2709', 'ALL_VAL_MO'),
+        'oil_exports_2710': ('exports', '2710', 'ALL_VAL_MO'),
+        'gas_imports_2711': ('imports', '2711', 'GEN_VAL_MO'),
+        'gas_exports_2711': ('exports', '2711', 'ALL_VAL_MO'),
+    }
+
+    census_results = {}
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            key: executor.submit(fetch_census_annual_series, flow, code, value_field)
+            for key, (flow, code, value_field) in census_tasks.items()
+        }
+        for key, future in futures.items():
+            try:
+                census_results[key] = future.result()
+            except Exception as e:
+                print(f"Census task failed ({key}): {e}")
+                census_results[key] = {}
+
+    oil_imports = dict(census_results.get('oil_imports_2709', {}))
+    oil_imports_2 = dict(census_results.get('oil_imports_2710', {}))
+    oil_exports = dict(census_results.get('oil_exports_2709', {}))
+    oil_exports_2 = dict(census_results.get('oil_exports_2710', {}))
+    gas_imports = dict(census_results.get('gas_imports_2711', {}))
+    gas_exports = dict(census_results.get('gas_exports_2711', {}))
 
     for year, value in oil_imports_2.items():
         oil_imports[year] = oil_imports.get(year, 0.0) + value
@@ -2636,8 +4987,23 @@ def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None):
         oil_exports[year] = oil_exports.get(year, 0.0) + value
 
     # Fast total net imports proxy from FRED imports/exports of goods and services
-    imports_gs = fetch_fred_data('IMPGS', f'{int(start_year)}-01-01', f'{int(end_year)}-12-31', FRED_API_KEY)
-    exports_gs = fetch_fred_data('EXPGS', f'{int(start_year)}-01-01', f'{int(end_year)}-12-31', FRED_API_KEY)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        imports_future = executor.submit(
+            fetch_fred_data,
+            'IMPGS',
+            f'{int(start_year)}-01-01',
+            f'{int(end_year)}-12-31',
+            FRED_API_KEY,
+        )
+        exports_future = executor.submit(
+            fetch_fred_data,
+            'EXPGS',
+            f'{int(start_year)}-01-01',
+            f'{int(end_year)}-12-31',
+            FRED_API_KEY,
+        )
+        imports_gs = imports_future.result()
+        exports_gs = exports_future.result()
 
     imports_by_year = {}
     exports_by_year = {}
@@ -2656,21 +5022,42 @@ def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None):
         total_exports = (sum(exp_vals) / len(exp_vals) * 1_000_000_000.0) if exp_vals else None
         total_net = (total_imports - total_exports) if (total_imports is not None and total_exports is not None) else None
 
-        oil_net = oil_imports.get(year, 0.0) - oil_exports.get(year, 0.0)
-        gas_net = gas_imports.get(year, 0.0) - gas_exports.get(year, 0.0)
-        other_net = (total_net - oil_net - gas_net) if total_net is not None else 0.0
+        oil_imp = oil_imports.get(year)
+        oil_exp = oil_exports.get(year)
+        gas_imp = gas_imports.get(year)
+        gas_exp = gas_exports.get(year)
 
-        positive_base = max(oil_net, 0.0) + max(gas_net, 0.0) + max(other_net, 0.0)
-        oil_weight = ((max(oil_net, 0.0) / positive_base) * 100.0) if positive_base > 0 else None
-        gas_weight = ((max(gas_net, 0.0) / positive_base) * 100.0) if positive_base > 0 else None
-        other_weight = ((max(other_net, 0.0) / positive_base) * 100.0) if positive_base > 0 else None
+        oil_net = None if (oil_imp is None and oil_exp is None) else float(oil_imp or 0.0) - float(oil_exp or 0.0)
+        gas_net = None if (gas_imp is None and gas_exp is None) else float(gas_imp or 0.0) - float(gas_exp or 0.0)
+        oil_net_exports = None if oil_net is None else -oil_net
+        gas_net_exports = None if gas_net is None else -gas_net
+
+        known_energy = [v for v in [oil_net, gas_net] if v is not None]
+        other_net = (total_net - sum(known_energy)) if (total_net is not None) else None
+        total_net_exports = None if total_net is None else -total_net
+
+        positive_components = [
+            max(oil_net, 0.0) if oil_net is not None else None,
+            max(gas_net, 0.0) if gas_net is not None else None,
+            max(other_net, 0.0) if other_net is not None else None,
+        ]
+        positive_base = sum(v for v in positive_components if v is not None)
+        has_any_component = any(v is not None for v in positive_components)
+        total_net_imports = positive_base if (has_any_component and positive_base > 0) else None
+
+        oil_weight = ((max(oil_net, 0.0) / positive_base) * 100.0) if (oil_net is not None and positive_base > 0) else None
+        gas_weight = ((max(gas_net, 0.0) / positive_base) * 100.0) if (gas_net is not None and positive_base > 0) else None
+        other_weight = ((max(other_net, 0.0) / positive_base) * 100.0) if (other_net is not None and positive_base > 0) else None
 
         points.append({
             'year': year,
-            'total_net_imports_usd': positive_base if positive_base > 0 else None,
+            'total_net_imports_usd': total_net_imports,
             'total_trade_balance_usd': total_net,
             'oil_net_imports_usd': oil_net,
             'gas_net_imports_usd': gas_net,
+            'oil_net_exports_usd': oil_net_exports,
+            'gas_net_exports_usd': gas_net_exports,
+            'total_net_exports_usd': total_net_exports,
             'other_net_imports_usd': other_net,
             'oil_weight_pct': oil_weight,
             'gas_weight_pct': gas_weight,
@@ -2679,7 +5066,7 @@ def fetch_us_real_energy_imports_weights(start_year=2019, end_year=None):
 
     return {
         'source': 'U.S. Census Bureau International Trade API (HS)',
-        'notes': 'Non-proxy values. Net imports = imports - exports. Weights computed on positive net-imports base.',
+        'notes': 'Non-proxy values. Net imports = imports - exports; net exports = exports - imports. Weights computed on positive net-imports base.',
         'hs_mapping': {
             'oil': ['2709', '2710'],
             'gas': ['2711'],
@@ -2703,7 +5090,8 @@ def get_us_real_energy_imports():
         if cached and (now_ts - cached.get('computed_at', 0)) < US_REAL_ENERGY_CACHE_TTL_SECONDS:
             return jsonify(cached['payload'])
 
-        payload = fetch_us_real_energy_imports_weights(start_year, end_year)
+        allow_slow_fallback = str(request.args.get('allow_slow_fallback', '0')).strip().lower() in {'1', 'true', 'yes'}
+        payload = fetch_us_real_energy_imports_weights(start_year, end_year, allow_slow_fallback=allow_slow_fallback)
         US_REAL_ENERGY_CACHE[cache_key] = {
             'computed_at': now_ts,
             'payload': payload,
