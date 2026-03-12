@@ -2,6 +2,7 @@ let energyTradeChart = null;
 let importsWeightsChart = null;
 let petrochemEurozoneChart = null;
 let petrochemCountriesChart = null;
+let fertilizerExportsChart = null;
 let usImportsChart = null;
 let italyImportsChart = null;
 let germanyImportsChart = null;
@@ -177,6 +178,14 @@ function setupDownloadButtons() {
         petrochemCountriesBtn.addEventListener('click', () => {
             const title = (document.getElementById('petrochemCountriesTitle') || {}).textContent || 'Petrochemicals imports - countries';
             downloadChartPng(petrochemCountriesChart, title, 'petrochem_imports_countries');
+        });
+    }
+
+    const fertilizerBtn = document.getElementById('downloadFertilizerExportsBtn');
+    if (fertilizerBtn) {
+        fertilizerBtn.addEventListener('click', () => {
+            const title = (document.getElementById('fertilizerExportsTitle') || {}).textContent || 'Selected countries share of world fertilizer exports';
+            downloadChartPng(fertilizerExportsChart, title, 'fertilizer_exports_share_world');
         });
     }
 
@@ -1435,6 +1444,116 @@ function renderPetrochemCountriesChart(points) {
     if (titleElement) titleElement.textContent = 'Petrochemicals imports - Countries';
 }
 
+function renderFertilizerExportsShareChart(payload) {
+    const canvas = document.getElementById('fertilizerExportsChart');
+    if (!canvas) return;
+
+    const points = Array.isArray(payload && payload.points) ? payload.points : [];
+    if (!points.length) {
+        throw new Error('No fertilizer exports data available.');
+    }
+
+    const labels = points.map(point => String(point.year));
+    const countries = Array.isArray(payload && payload.countries) ? payload.countries : [];
+
+    const styleByCode = {
+        SAU: { border: '#B45309', background: '#B4530922' },
+        QAT: { border: '#7C3AED', background: '#7C3AED22' },
+        RUS: { border: '#1D4ED8', background: '#1D4ED822' },
+        MAR: { border: '#047857', background: '#04785722' },
+        CAN: { border: '#111827', background: '#11182722' },
+    };
+
+    const datasets = countries.map(country => {
+        const style = styleByCode[String(country.code || '').toUpperCase()] || { border: '#334155', background: '#33415522' };
+        return {
+            label: country.name || country.code || 'Country',
+            data: points.map(point => {
+                const value = point[country.series_key];
+                return value == null ? null : Number(value);
+            }),
+            borderColor: style.border,
+            backgroundColor: style.background,
+            borderWidth: 2.2,
+            pointRadius: 1.8,
+            tension: 0.2,
+            spanGaps: true,
+            fill: false,
+        };
+    });
+
+    if (fertilizerExportsChart) {
+        fertilizerExportsChart.destroy();
+    }
+
+    fertilizerExportsChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets,
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Year',
+                    },
+                    grid: {
+                        display: false,
+                    },
+                },
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Share of world fertilizer exports (%)',
+                    },
+                    ticks: {
+                        callback: value => `${Number(value).toFixed(1)}%`,
+                    },
+                    grid: {
+                        color: '#D1D5DB',
+                    },
+                },
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                },
+                tooltip: {
+                    callbacks: {
+                        label: context => {
+                            const value = context.parsed.y;
+                            if (value == null) return `${context.dataset.label}: N/A`;
+                            return `${context.dataset.label}: ${Number(value).toFixed(2)}%`;
+                        },
+                    },
+                },
+            },
+        },
+    });
+
+    const title = document.getElementById('fertilizerExportsTitle');
+    if (title) {
+        title.textContent = `Saudi Arabia, Qatar, Russia, Morocco, Canada — share of world fertilizer exports (${payload.start_year || 'N/A'}→${payload.end_year || 'N/A'})`;
+    }
+}
+
+async function fetchAndRenderFertilizerExportsShare() {
+    const response = await fetch(`${API_BASE}/api/fertilizer-exports-share-world?start_year=2018`);
+    if (!response.ok) throw new Error(`Server error ${response.status}`);
+    const payload = await response.json();
+    renderFertilizerExportsShareChart(payload);
+}
+
 function renderCountryFuelProxyChart(countryPayload, chartConfig) {
     const canvas = document.getElementById(chartConfig.canvasId);
     if (!canvas) return null;
@@ -2253,6 +2372,16 @@ window.addEventListener('DOMContentLoaded', async () => {
         const countriesTitle = document.getElementById('petrochemCountriesTitle');
         if (euroTitle) euroTitle.textContent = 'Petrochemicals imports - Eurozone chart failed to load';
         if (countriesTitle) countriesTitle.textContent = 'Petrochemicals imports - Countries chart failed to load';
+    }
+
+    try {
+        await fetchAndRenderFertilizerExportsShare();
+    } catch (error) {
+        console.error('Error loading fertilizer exports share chart:', error);
+        const title = document.getElementById('fertilizerExportsTitle');
+        if (title) {
+            title.textContent = 'Fertilizer exports share chart failed to load';
+        }
     }
 
     try {

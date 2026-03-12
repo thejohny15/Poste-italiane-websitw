@@ -13,6 +13,40 @@ function withApiKey(url, key) {
     return `${url}${separator}api_key=${encodeURIComponent(key)}`;
 }
 
+function downloadChartFromInstance(chartInstance, fileName, titleText = '') {
+    if (!chartInstance || !chartInstance.canvas) return false;
+
+    const sourceCanvas = chartInstance.canvas;
+    const title = String(titleText || '').trim();
+    const topPadding = title ? 52 : 0;
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = sourceCanvas.width;
+    exportCanvas.height = sourceCanvas.height + topPadding;
+
+    const exportCtx = exportCanvas.getContext('2d');
+    exportCtx.fillStyle = '#FFFFFF';
+    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+    if (title) {
+        exportCtx.fillStyle = '#0B3A75';
+        exportCtx.font = 'bold 26px Arial';
+        exportCtx.textAlign = 'center';
+        exportCtx.textBaseline = 'middle';
+        exportCtx.fillText(title, exportCanvas.width / 2, 26);
+    }
+
+    exportCtx.drawImage(sourceCanvas, 0, topPadding);
+
+    const link = document.createElement('a');
+    link.href = exportCanvas.toDataURL('image/png', 1.0);
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    return true;
+}
+
 async function checkServerStatus() {
     const statusElement = document.getElementById('serverStatus');
     if (!statusElement) return;
@@ -61,29 +95,39 @@ function renderElectricityShareChart(payload, canvasId, titleId, displayName) {
         otherFossil: points.map(point => point.other_fossil == null ? null : Number(point.other_fossil)),
     };
 
-    const datasetsBase = [
-        { label: 'Solar', data: series.solar, borderColor: '#2ECC71', backgroundColor: '#2ECC71CC' },
+    const importedElectricity = points.map((_, index) => {
+        const values = [
+            series.solar[index],
+            series.wind[index],
+            series.hydro[index],
+            series.bioenergy[index],
+            series.otherRenewables[index],
+            series.nuclear[index],
+            series.gas[index],
+            series.coal[index],
+            series.otherFossil[index],
+        ].filter(value => value != null && Number.isFinite(value));
+
+        if (!values.length) return null;
+
+        const domesticTotal = values.reduce((sum, value) => sum + value, 0);
+        const residual = 100 - domesticTotal;
+        if (residual <= 0) return 0;
+        return Math.min(100, residual);
+    });
+
+    const datasets = [
+        { label: 'Gas', data: series.gas, borderColor: '#8C7B7B', backgroundColor: '#8C7B7BCC' },
+        { label: 'Nuclear', data: series.nuclear, borderColor: '#2C4587', backgroundColor: '#2C4587CC' },
         { label: 'Wind', data: series.wind, borderColor: '#176B3A', backgroundColor: '#176B3ACC' },
         { label: 'Hydro', data: series.hydro, borderColor: '#7FB3D5', backgroundColor: '#7FB3D5CC' },
+        { label: 'Coal', data: series.coal, borderColor: '#5A423B', backgroundColor: '#5A423BCC' },
+        { label: 'Solar', data: series.solar, borderColor: '#2ECC71', backgroundColor: '#2ECC71CC' },
         { label: 'Bioenergy', data: series.bioenergy, borderColor: '#2E6BAE', backgroundColor: '#2E6BAECC' },
         { label: 'Other renewables', data: series.otherRenewables, borderColor: '#A9D6DE', backgroundColor: '#A9D6DECC' },
-        { label: 'Nuclear', data: series.nuclear, borderColor: '#2C4587', backgroundColor: '#2C4587CC' },
-        { label: 'Gas', data: series.gas, borderColor: '#8C7B7B', backgroundColor: '#8C7B7BCC' },
-        { label: 'Coal', data: series.coal, borderColor: '#5A423B', backgroundColor: '#5A423BCC' },
         { label: 'Other fossil', data: series.otherFossil, borderColor: '#A9A3A3', backgroundColor: '#A9A3A3CC' },
-    ];
-
-    const latestValue = (arr) => {
-        for (let index = arr.length - 1; index >= 0; index -= 1) {
-            const value = arr[index];
-            if (value != null && Number.isFinite(Number(value))) return Number(value);
-        }
-        return -Infinity;
-    };
-
-    const datasets = datasetsBase
-        .sort((a, b) => latestValue(b.data) - latestValue(a.data))
-        .map(item => ({
+        { label: 'Imported electricity', data: importedElectricity, borderColor: '#F59E0B', backgroundColor: '#F59E0BCC' },
+    ].map(item => ({
         ...item,
         type: 'line',
         borderWidth: 1,
@@ -165,7 +209,7 @@ function renderElectricityShareChart(payload, canvasId, titleId, displayName) {
 
     const title = document.getElementById(titleId);
     if (title) {
-        title.textContent = `${displayName} — percentage share (monthly, stacked) (${payload.start_date || 'N/A'} → ${payload.end_date || 'N/A'})`;
+        title.textContent = `${displayName} — energy-source share of electricity supply (production + imports, monthly, stacked) (${payload.start_date || 'N/A'} → ${payload.end_date || 'N/A'})`;
     }
 }
 
@@ -559,6 +603,44 @@ async function fetchAndRenderElectricityEntity(entity, canvasId, titleId, displa
 
 window.addEventListener('DOMContentLoaded', async () => {
     await checkServerStatus();
+
+    const downloadEuropeBtn = document.getElementById('downloadEuropeElectricityChartBtn');
+    if (downloadEuropeBtn) {
+        downloadEuropeBtn.addEventListener('click', () => {
+            const titleElement = document.getElementById('europeElectricityTitle');
+            const titleText = titleElement ? titleElement.textContent : '';
+            const ok = downloadChartFromInstance(
+                electricityCharts.europeElectricityChart,
+                `europe-electricity-share-${new Date().toISOString().slice(0, 10)}.png`,
+                titleText
+            );
+            if (!ok) {
+                const title = document.getElementById('europeElectricityTitle');
+                if (title) {
+                    title.textContent = 'Europe chart is not ready yet. Wait for it to load, then click download again.';
+                }
+            }
+        });
+    }
+
+    const downloadUsBtn = document.getElementById('downloadUsElectricityChartBtn');
+    if (downloadUsBtn) {
+        downloadUsBtn.addEventListener('click', () => {
+            const titleElement = document.getElementById('usElectricityTitle');
+            const titleText = titleElement ? titleElement.textContent : '';
+            const ok = downloadChartFromInstance(
+                electricityCharts.usElectricityChart,
+                `united-states-electricity-share-${new Date().toISOString().slice(0, 10)}.png`,
+                titleText
+            );
+            if (!ok) {
+                const title = document.getElementById('usElectricityTitle');
+                if (title) {
+                    title.textContent = 'United States chart is not ready yet. Wait for it to load, then click download again.';
+                }
+            }
+        });
+    }
 
     try {
         const [productionResponse, consumptionResponse] = await Promise.all([

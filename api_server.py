@@ -71,6 +71,7 @@ EIA_WORLD_EXPORTERS_SHARE_CACHE: dict[str, Any] = {}
 EIA_WORLD_EXPORTERS_SHARE_CACHE_TTL_SECONDS = 6 * 3600
 EIA_DISK_CACHE_DIR = Path(__file__).resolve().parent / '.cache' / 'eia'
 EIA_DISK_CACHE_MAX_AGE_SECONDS = 7 * 24 * 3600
+COMTRADE_BASE_URL = 'https://comtradeapi.worldbank.org/data/v1/get/C/A/HS'
 
 EUROZONE_MEMBER_CODES = {
     'AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'EL', 'IE',
@@ -4397,6 +4398,206 @@ def get_petrochem_country_imports():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+def extract_comtrade_rows(payload):
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ('data', 'dataset', 'results', 'list', 'items'):
+        rows = payload.get(key)
+        if isinstance(rows, list):
+            return rows
+
+    return []
+
+
+def extract_comtrade_trade_value(row):
+    if not isinstance(row, dict):
+        return None
+
+    for key in (
+        'primaryValue', 'tradeValue', 'TradeValue', 'value',
+        'fobvalue', 'fobValue', 'FOBValue',
+        'cifvalue', 'cifValue', 'CIFValue',
+    ):
+        value = row.get(key)
+        if value in (None, '', '.'):
+            continue
+        try:
+            parsed = float(value)
+            if np.isfinite(parsed):
+                return parsed
+        except Exception:
+            continue
+
+    return None
+
+
+def fetch_comtrade_hs_exports_value(year, reporter_code, commodity_code='31'):
+    params = {
+        'reporterCode': str(reporter_code),
+        'partnerCode': '0',
+        'flowCode': 'X',
+        'cmdCode': str(commodity_code),
+        'period': str(int(year)),
+        'format': 'json',
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(COMTRADE_BASE_URL, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            print(
+                f"Comtrade fetch failed (attempt {attempt}/3, reporter={reporter_code}, year={year}, cmd={commodity_code}): {e}"
+            )
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(
+            f"Comtrade request failed for reporter={reporter_code}, year={year}, cmd={commodity_code}: {last_error}"
+        )
+
+    rows = extract_comtrade_rows(payload)
+    if not rows:
+        return None
+
+    total = 0.0
+    has_value = False
+    for row in rows:
+        value = extract_comtrade_trade_value(row)
+        if value is None:
+            continue
+        total += float(value)
+        has_value = True
+
+    return total if has_value else None
+
+
+def fetch_comtrade_hs_world_exports_value(year, commodity_code='31'):
+    try:
+        return fetch_comtrade_hs_exports_value(year=year, reporter_code='all', commodity_code=commodity_code), 'all_reporters'
+    except Exception as all_error:
+        print(f"Comtrade world fetch via reporter=all failed for year={year}: {all_error}")
+
+    try:
+        return fetch_comtrade_hs_exports_value(year=year, reporter_code='0', commodity_code=commodity_code), 'reporter_0'
+    except Exception as code0_error:
+        print(f"Comtrade world fetch via reporter=0 failed for year={year}: {code0_error}")
+
+    return None, 'fallback_selected_sum'
+
+
+def fetch_fertilizer_exports_share_world(start_year=2018, end_year=None):
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    country_specs = [
+        {'code': 'SAU', 'name': 'Saudi Arabia', 'reporter_code': '682', 'series_key': 'saudi_arabia_pct'},
+        {'code': 'QAT', 'name': 'Qatar', 'reporter_code': '634', 'series_key': 'qatar_pct'},
+        {'code': 'RUS', 'name': 'Russia', 'reporter_code': '643', 'series_key': 'russia_pct'},
+        {'code': 'MAR', 'name': 'Morocco', 'reporter_code': '504', 'series_key': 'morocco_pct'},
+        {'code': 'CAN', 'name': 'Canada', 'reporter_code': '124', 'series_key': 'canada_pct'},
+    ]
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    points = []
+    denominator_methods = set()
+
+    for year in years:
+        values_by_key = {}
+        for spec in country_specs:
+            try:
+                value = fetch_comtrade_hs_exports_value(
+                    year=year,
+                    reporter_code=spec['reporter_code'],
+                    commodity_code='31',
+                )
+            except Exception as e:
+                print(f"Fertilizer country fetch failed for {spec['code']} ({year}): {e}")
+                value = None
+            values_by_key[spec['series_key'].replace('_pct', '_usd')] = value
+
+        world_value, method = fetch_comtrade_hs_world_exports_value(year=year, commodity_code='31')
+        if world_value is None:
+            selected_values = [
+                value for value in values_by_key.values()
+                if value is not None and np.isfinite(float(value))
+            ]
+            world_value = float(sum(selected_values)) if selected_values else None
+            method = 'fallback_selected_sum'
+
+        denominator_methods.add(method)
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_value,
+        }
+
+        for spec in country_specs:
+            value_key = spec['series_key'].replace('_pct', '_usd')
+            pct_key = spec['series_key']
+            value = values_by_key.get(value_key)
+            point[value_key] = value
+            if value is None or world_value is None or float(world_value) <= 0:
+                point[pct_key] = None
+            else:
+                point[pct_key] = (float(value) / float(world_value)) * 100.0
+
+        points.append(point)
+
+    non_empty_points = [point for point in points if any(point.get(spec['series_key']) is not None for spec in country_specs)]
+
+    return {
+        'source': 'UN Comtrade API',
+        'dataset': 'HS annual merchandise trade',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': '31',
+        'commodity_label': 'Fertilizers',
+        'start_year': non_empty_points[0]['year'] if non_empty_points else None,
+        'end_year': non_empty_points[-1]['year'] if non_empty_points else None,
+        'countries': country_specs,
+        'denominator_methods_used': sorted(denominator_methods),
+        'points': non_empty_points,
+    }
+
+
+@app.route('/api/fertilizer-exports-share-world', methods=['GET'])
+def get_fertilizer_exports_share_world():
+    """Return annual share of world fertilizer exports for selected countries."""
+    try:
+        start_year = int(request.args.get('start_year', 2018))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_fertilizer_exports_share_world(start_year=start_year, end_year=end_year)
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in fertilizer-exports-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fertilizer-exports-share', methods=['GET'])
+@app.route('/api/fertilizer-exports-world-share', methods=['GET'])
+def get_fertilizer_exports_share_world_alias():
+    """Alias routes for annual share of world fertilizer exports for selected countries."""
+    return get_fertilizer_exports_share_world()
 
 
 def fetch_world_bank_indicator_series(country_code, indicator_code):

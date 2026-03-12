@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US vs OECD Europe Consumption</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>US vs OECD Europe Consumption</h1>
+            <p class="subtitle">Monthly petroleum and other liquids consumption from EIA International API</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="energy_europe.html" class="nav-link">Energy in Europe</a>
+                <a href="oil_dual_api.html" class="nav-link">Oil Dual API</a>
+                <a href="us_oecd_consumption.html" class="nav-link active">US vs OECD Europe Consumption</a>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <input id="eiaApiKeyInput" type="password" placeholder="Enter EIA API key" style="padding: 8px 10px; min-width: 320px; border: 1px solid #D1D5DB; border-radius: 6px;" />
+                <button id="saveEiaKeyBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">Use key</button>
+                <button id="clearEiaKeyBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">Clear key</button>
+                <span id="eiaKeyStatus" style="font-size: 13px; color: #374151;"></span>
+            </div>
+        </header>
+
+        <main>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="usOecdConsumptionTitle" class="chart-title">Loading monthly consumption data...</h3>
+                <canvas id="usOecdConsumptionChart"></canvas>
+            </div>
+        </main>
+    </div>
+
+    <script src="us_oecd_consumption.js"></script>
+</body>
+</html>
