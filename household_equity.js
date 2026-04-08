@@ -1,6 +1,7 @@
 let householdEquityChart = null;
 let wealthEffectChart = null;
 let equityStressChart = null;
+let inflationNaphthaChart = null;
 
 const API_BASE = 'http://localhost:5001';
 
@@ -177,6 +178,53 @@ function stressChartOptions() {
     };
 }
 
+function inflationNaphthaOptions() {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { unit: 'year', displayFormats: { year: 'yyyy' } },
+                title: { display: true, text: 'Date' }
+            },
+            y: {
+                position: 'left',
+                beginAtZero: false,
+                title: { display: true, text: 'Inflation (YoY %)' },
+                ticks: {
+                    callback: value => `${Number(value).toFixed(1)}%`
+                }
+            },
+            y1: {
+                position: 'right',
+                beginAtZero: false,
+                title: { display: true, text: 'Naphtha Price (USD/ton)' },
+                grid: { drawOnChartArea: false },
+                ticks: {
+                    callback: value => Number(value).toFixed(0)
+                }
+            }
+        },
+        plugins: {
+            legend: { display: true, position: 'top' },
+            tooltip: {
+                callbacks: {
+                    label: function (context) {
+                        const v = context.parsed.y;
+                        if (v == null) return `${context.dataset.label}: N/A`;
+                        if (context.dataset.yAxisID === 'y1') {
+                            return `${context.dataset.label}: ${v.toFixed(2)}`;
+                        }
+                        return `${context.dataset.label}: ${v.toFixed(2)}%`;
+                    }
+                }
+            }
+        }
+    };
+}
+
 function renderChart(data) {
     const ctx = document.getElementById('householdEquityChart').getContext('2d');
     if (householdEquityChart) householdEquityChart.destroy();
@@ -339,6 +387,62 @@ function renderEquityStressChart(data) {
     });
 }
 
+function renderInflationNaphthaChart(data) {
+    const ctx = document.getElementById('inflationNaphthaChart').getContext('2d');
+    if (inflationNaphthaChart) inflationNaphthaChart.destroy();
+
+    const cutoff = new Date('2016-01-01');
+    const filteredSeries = (data.inflation_naphtha || []).filter(item => {
+        const d = new Date(item.date);
+        return !Number.isNaN(d.getTime()) && d >= cutoff;
+    });
+
+    inflationNaphthaChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'US Inflation (YoY)',
+                    data: toPoints(filteredSeries, 'us_inflation_yoy'),
+                    borderColor: '#1D4ED8',
+                    backgroundColor: '#1D4ED822',
+                    borderWidth: 2.2,
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.15,
+                    spanGaps: true,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Euro Area Inflation (YoY)',
+                    data: toPoints(filteredSeries, 'eu_inflation_yoy'),
+                    borderColor: '#F59E0B',
+                    backgroundColor: '#F59E0B22',
+                    borderWidth: 2.2,
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.15,
+                    spanGaps: true,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Naphtha Price',
+                    data: toPoints(filteredSeries, 'naphtha_price'),
+                    borderColor: '#DC2626',
+                    backgroundColor: '#DC262622',
+                    borderWidth: 2.2,
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.15,
+                    spanGaps: true,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: inflationNaphthaOptions()
+    });
+}
+
 async function checkServerStatus() {
     const statusElement = document.getElementById('serverStatus');
     if (!statusElement) return false;
@@ -367,6 +471,7 @@ async function fetchAndRenderData() {
         renderChart(data);
         renderWealthEffectChart(data);
         renderEquityStressChart(data);
+        renderInflationNaphthaChart(data);
     } catch (error) {
         console.error('Error loading household equity dashboard data:', error);
         alert('Could not load household equity dashboard data. Please check API server and try again.');

@@ -29,6 +29,8 @@
                 <a href="energy_trade.html" class="nav-link">Energy Fuels Trade</a>
                 <a href="energy_europe.html" class="nav-link active">Energy in Europe</a>
                 <a href="oil_dual_api.html" class="nav-link">Oil Dual API</a>
+                <a href="sulfur.html" class="nav-link">Sulfur</a>
+                <a href="urea.html" class="nav-link">Urea</a>
             </div>
             <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
                 Checking server status...
@@ -86,25 +88,150 @@
                 <h3 id="italyElectricityTitle" class="chart-title">Italy — percentage share (monthly, stacked)</h3>
                 <canvas id="italyElectricityChart"></canvas>
             </div>
+            <div style="margin-top: 10px; margin-bottom: 16px;">
+                <button id="downloadItalyElectricityChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Italy chart (PNG)
+                </button>
+            </div>
 
             <div class="chart-container" style="height: 520px;">
                 <h3 id="belgiumElectricityTitle" class="chart-title">Belgium — percentage share (monthly, stacked)</h3>
                 <canvas id="belgiumElectricityChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 16px;">
+                <button id="downloadBelgiumElectricityChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Belgium chart (PNG)
+                </button>
             </div>
 
             <div class="chart-container" style="height: 520px;">
                 <h3 id="franceElectricityTitle" class="chart-title">France — percentage share (monthly, stacked)</h3>
                 <canvas id="franceElectricityChart"></canvas>
             </div>
+            <div style="margin-top: 10px; margin-bottom: 16px;">
+                <button id="downloadFranceElectricityChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download France chart (PNG)
+                </button>
+            </div>
 
             <div class="chart-container" style="height: 520px;">
                 <h3 id="spainElectricityTitle" class="chart-title">Spain — percentage share (monthly, stacked)</h3>
                 <canvas id="spainElectricityChart"></canvas>
             </div>
+            <div style="margin-top: 10px; margin-bottom: 16px;">
+                <button id="downloadSpainElectricityChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Spain chart (PNG)
+                </button>
+            </div>
 
             <div class="chart-container" style="height: 520px;">
                 <h3 id="germanyElectricityTitle" class="chart-title">Germany — percentage share (monthly, stacked)</h3>
                 <canvas id="germanyElectricityChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 16px;">
+                <button id="downloadGermanyElectricityChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Germany chart (PNG)
+                </button>
+            </div>
+
+            <div class="chart-container" style="height: 520px;">
+                <h3 id="swedenElectricityTitle" class="chart-title">Sweden — percentage share (monthly, stacked)</h3>
+                <canvas id="swedenElectricityChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 16px;">
+                <button id="downloadSwedenElectricityChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Sweden chart (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Aluminium Exporters (Top 5 + Middle East Rankings)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="aluminumTopExportersTitle" class="chart-title">Loading top exporters…</h3>
+                <canvas id="aluminumTopExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadAluminumTopExportersBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download exporters graph (PNG)
+                </button>
+            </div>
+            <div class="chart-container" style="height: 320px;">
+                <h3 id="aluminumRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="aluminumRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Source:</strong> OEC (primary), UN Comtrade fallback.
+            </div>
+
+            <h2 class="section-title">LNG Exporters (Top 5 + Middle East Rankings)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="lngTopExportersTitle" class="chart-title">Loading top LNG exporters…</h3>
+                <canvas id="lngTopExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadLngTopExportersBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download LNG exporters graph (PNG)
+                </button>
+            </div>
+            <div class="chart-container" style="height: 320px;">
+                <h3 id="lngRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="lngRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Source:</strong> OEC (HS6 271111).
+            </div>
+
+            <h2 class="section-title">NGL Exporters (Top 5 + Middle East Rankings)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="nglTopExportersTitle" class="chart-title">Loading top NGL exporters…</h3>
+                <canvas id="nglTopExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadNglTopExportersBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download NGL exporters graph (PNG)
+                </button>
+            </div>
+            <div class="chart-container" style="height: 320px;">
+                <h3 id="nglRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="nglRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Source:</strong> OEC (HS6 271112 + 271113 + 271119 combined).
+            </div>
+
+            <h2 class="section-title">Sulfur Exporters (Top 5 + Middle East Rankings)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="sulfurTopExportersTitle" class="chart-title">Loading top sulfur exporters…</h3>
+                <canvas id="sulfurTopExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadSulfurTopExportersBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download sulfur exporters graph (PNG)
+                </button>
+            </div>
+            <div class="chart-container" style="height: 320px;">
+                <h3 id="sulfurRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="sulfurRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Source:</strong> OEC (HS4 2503).
+            </div>
+
+            <h2 class="section-title">Naphtha Exports Share of World (Top 5 + Middle East Rankings)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="naphthaNetExportsTitle" class="chart-title">Loading naphtha exports share…</h3>
+                <canvas id="naphthaNetExportsChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadNaphthaNetExportsBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download naphtha exports graph (PNG)
+                </button>
+            </div>
+            <div class="chart-container" style="height: 320px;">
+                <h3 id="naphthaNetRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="naphthaNetRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Source:</strong> UN Energy Statistics (UNdata). Share of world exports. Unit: thousand metric tons.
             </div>
         </main>
 

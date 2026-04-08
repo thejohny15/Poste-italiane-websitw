@@ -2,8 +2,8 @@ let energyTradeChart = null;
 let importsWeightsChart = null;
 let petrochemEurozoneChart = null;
 let petrochemCountriesChart = null;
+let petrochemTopExportersChart = null;
 let fertilizerExportsChart = null;
-let usImportsChart = null;
 let italyImportsChart = null;
 let germanyImportsChart = null;
 let franceImportsChart = null;
@@ -181,19 +181,19 @@ function setupDownloadButtons() {
         });
     }
 
+    const petrochemTopExportersBtn = document.getElementById('downloadPetrochemTopExportersBtn');
+    if (petrochemTopExportersBtn) {
+        petrochemTopExportersBtn.addEventListener('click', () => {
+            const title = (document.getElementById('petrochemTopExportersTitle') || {}).textContent || 'Top petrochemicals exporters share of world exports';
+            downloadChartPng(petrochemTopExportersChart, title, 'petrochem_top_exporters_share_world');
+        });
+    }
+
     const fertilizerBtn = document.getElementById('downloadFertilizerExportsBtn');
     if (fertilizerBtn) {
         fertilizerBtn.addEventListener('click', () => {
             const title = (document.getElementById('fertilizerExportsTitle') || {}).textContent || 'Selected countries share of world fertilizer exports';
             downloadChartPng(fertilizerExportsChart, title, 'fertilizer_exports_share_world');
-        });
-    }
-
-    const usBtn = document.getElementById('downloadUsChartBtn');
-    if (usBtn) {
-        usBtn.addEventListener('click', () => {
-            const title = (document.getElementById('usFuelTitle') || {}).textContent || 'United States oil and gas net exports';
-            downloadChartPng(usImportsChart, title, 'us_oil_gas_net_trade');
         });
     }
 
@@ -1444,6 +1444,79 @@ function renderPetrochemCountriesChart(points) {
     if (titleElement) titleElement.textContent = 'Petrochemicals imports - Countries';
 }
 
+function renderPetrochemTopExportersShareChart(payload) {
+    const canvas = document.getElementById('petrochemTopExportersChart');
+    if (!canvas) return;
+
+    const points = Array.isArray(payload && payload.points) ? payload.points : [];
+    if (!points.length) {
+        throw new Error('No petrochemicals exports data available.');
+    }
+
+    const labels = points.map(point => String(point.year));
+    const countries = Array.isArray(payload && payload.countries) ? payload.countries : [];
+
+    const palette = ['#1D4ED8', '#059669', '#EA580C', '#A855F7', '#7C2D12', '#0EA5E9'];
+
+    const datasets = countries.map((country, index) => {
+        const color = palette[index % palette.length];
+        return {
+            label: country.name || country.code || 'Country',
+            data: points.map(point => {
+                const value = point[country.series_key];
+                return value == null ? null : Number(value);
+            }),
+            borderColor: color,
+            backgroundColor: `${color}22`,
+            borderWidth: 2.2,
+            pointRadius: 1.8,
+            tension: 0.2,
+            spanGaps: true,
+            fill: false,
+        };
+    });
+
+    if (petrochemTopExportersChart) {
+        petrochemTopExportersChart.destroy();
+    }
+
+    petrochemTopExportersChart = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { title: { display: true, text: 'Year' }, grid: { display: false } },
+                y: {
+                    title: { display: true, text: 'Share of world exports (%)' },
+                    ticks: { callback: value => `${Number(value).toFixed(2)}%` },
+                    grid: { color: '#D1D5DB' },
+                },
+            },
+            plugins: {
+                legend: { display: true, position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: context => {
+                            const value = context.parsed.y;
+                            if (value == null) return `${context.dataset.label}: N/A`;
+                            return `${context.dataset.label}: ${Number(value).toFixed(2)}%`;
+                        },
+                    },
+                },
+            },
+        },
+    });
+
+    const title = document.getElementById('petrochemTopExportersTitle');
+    if (title) {
+        const label = payload && payload.commodity_label ? payload.commodity_label : 'Petrochemicals';
+        title.textContent = `Top petrochemicals exporters (${label}) — share of world exports (${payload.start_year || 'N/A'}→${payload.end_year || 'N/A'})`;
+    }
+}
+
 function renderFertilizerExportsShareChart(payload) {
     const canvas = document.getElementById('fertilizerExportsChart');
     if (!canvas) return;
@@ -1690,145 +1763,6 @@ function renderCountryFuelProxyChart(countryPayload, chartConfig) {
     return chartInstance;
 }
 
-function renderUsRealChart(payload) {
-    const canvas = document.getElementById('usImportsChart');
-    if (!canvas) return;
-
-    const points = Array.isArray(payload && payload.points) ? payload.points : [];
-    if (!points.length) {
-        throw new Error('No real U.S. data points available for net-exports chart.');
-    }
-
-    const labels = points.map(point => String(point.year));
-    const oilNetExportsBn = points.map(point => point.oil_net_imports_usd == null ? null : -Number(point.oil_net_imports_usd) / 1e9);
-    const gasNetExportsBn = points.map(point => point.gas_net_imports_usd == null ? null : -Number(point.gas_net_imports_usd) / 1e9);
-    const brentRaw = points.map(point => point.brent_usd_per_barrel == null ? null : Number(point.brent_usd_per_barrel));
-
-    const hasAnySeries = [...oilNetExportsBn, ...gasNetExportsBn].some(value => value != null && Number.isFinite(Number(value)));
-    if (!hasAnySeries) {
-        throw new Error('U.S. net-exports payload has no usable oil/gas values.');
-    }
-
-    if (usImportsChart) {
-        usImportsChart.destroy();
-    }
-
-    usImportsChart = new Chart(canvas.getContext('2d'), {
-        data: {
-            labels,
-            datasets: [
-                {
-                    type: 'line',
-                    label: 'Oil net exports (bn USD)',
-                    data: oilNetExportsBn,
-                    borderColor: '#1D4ED8',
-                    backgroundColor: '#1D4ED822',
-                    borderWidth: 2.5,
-                    pointRadius: 2,
-                    tension: 0.2,
-                    spanGaps: true,
-                    fill: false,
-                    order: 1
-                },
-                {
-                    type: 'line',
-                    label: 'Gas net exports (bn USD)',
-                    data: gasNetExportsBn,
-                    borderColor: '#60A5FA',
-                    backgroundColor: '#60A5FA22',
-                    borderWidth: 2.5,
-                    pointRadius: 2,
-                    tension: 0.2,
-                    spanGaps: true,
-                    fill: false,
-                    order: 1
-                },
-                {
-                    type: 'line',
-                    label: 'Brent oil (USD/bbl)',
-                    data: brentRaw,
-                    borderColor: BRENT_LINE_COLOR,
-                    backgroundColor: BRENT_FILL_COLOR,
-                    borderWidth: 2.2,
-                    pointRadius: 1.8,
-                    tension: 0.15,
-                    spanGaps: true,
-                    fill: false,
-                    yAxisID: 'y1',
-                    order: 0
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
-            scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Year'
-                    },
-                    grid: {
-                        display: false
-                    }
-                },
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Net exports (bn USD, exports − imports)'
-                    },
-                    ticks: {
-                        callback: value => `${Number(value).toFixed(0)} bn`
-                    },
-                    grid: {
-                        color: '#D1D5DB'
-                    }
-                },
-                y1: {
-                    position: 'right',
-                    title: {
-                        display: true,
-                        text: 'Brent oil (USD/bbl)'
-                    },
-                    ticks: {
-                        callback: value => `$${Number(value).toFixed(0)}`
-                    },
-                    grid: {
-                        drawOnChartArea: false
-                    }
-                }
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'bottom'
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function (context) {
-                            const value = context.parsed.y;
-                            if (value == null) return `${context.dataset.label}: N/A`;
-                            if (context.dataset.yAxisID === 'y1') {
-                                return `${context.dataset.label}: ${Number(value).toFixed(2)}`;
-                            }
-                            return `${context.dataset.label}: ${Number(value).toFixed(2)} bn USD`;
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    const titleElement = document.getElementById('usFuelTitle');
-    if (titleElement) {
-        titleElement.textContent = `United States oil and gas net exports (real data) (${payload.start_year || 'N/A'}→${payload.end_year || 'N/A'})`;
-    }
-}
-
 function renderCountryRealFuelChart(payload, chartConfig) {
     const canvas = document.getElementById(chartConfig.canvasId);
     if (!canvas) return;
@@ -1844,9 +1778,25 @@ function renderCountryRealFuelChart(payload, chartConfig) {
     const gasShare = points.map(point => point.gas_share_pct == null ? null : Number(point.gas_share_pct));
     const fuelShare = points.map(point => point.fuel_share_pct == null ? null : Number(point.fuel_share_pct));
     const otherShare = points.map(point => point.other_share_pct == null ? null : Number(point.other_share_pct));
+    const crudeOilShare = points.map(point => point.crude_oil_share_pct == null ? null : Number(point.crude_oil_share_pct));
+    const nglShare = points.map(point => point.natural_gas_liquids_share_pct == null ? null : Number(point.natural_gas_liquids_share_pct));
+    const lpgShare = points.map(point => point.lpg_share_pct == null ? null : Number(point.lpg_share_pct));
+    const naphthaShare = points.map(point => point.naphtha_share_pct == null ? null : Number(point.naphtha_share_pct));
+    const jetFuelShare = points.map(point => point.jet_fuel_share_pct == null ? null : Number(point.jet_fuel_share_pct));
+    const motorGasolineShare = points.map(point => point.motor_gasoline_share_pct == null ? null : Number(point.motor_gasoline_share_pct));
+    const dieselShare = points.map(point => point.diesel_share_pct == null ? null : Number(point.diesel_share_pct));
     const brentRaw = points.map(point => point.brent_usd_per_barrel == null ? null : Number(point.brent_usd_per_barrel));
     const hasOilGasSplit = points.some(point => point.oil_share_pct != null || point.gas_share_pct != null);
     const hasEstimatedSplit = points.some(point => String(point.oil_gas_split_method || '').includes('estimated'));
+    const hasDetailedOilProducts = points.some(point => (
+        point.crude_oil_share_pct != null ||
+        point.natural_gas_liquids_share_pct != null ||
+        point.lpg_share_pct != null ||
+        point.naphtha_share_pct != null ||
+        point.jet_fuel_share_pct != null ||
+        point.motor_gasoline_share_pct != null ||
+        point.diesel_share_pct != null
+    ));
 
     const hasAnySeries = [...oilShare, ...gasShare, ...fuelShare, ...totalImportsBnEur]
         .some(value => value != null && Number.isFinite(Number(value)));
@@ -1854,61 +1804,31 @@ function renderCountryRealFuelChart(payload, chartConfig) {
         throw new Error(`No usable import-share values available for ${chartConfig.countryLabel}.`);
     }
 
-    const shareDatasets = hasOilGasSplit
-        ? [
-            {
-                type: 'bar',
-                label: 'Oil weight (%)',
-                data: oilShare,
-                backgroundColor: '#B45309CC',
-                borderColor: '#92400E',
-                borderWidth: 1,
-                stack: 'weights',
-                order: 2
-            },
-            {
-                type: 'bar',
-                label: 'Gas weight (%)',
-                data: gasShare,
-                backgroundColor: '#F59E0BCC',
-                borderColor: '#B45309',
-                borderWidth: 1,
-                stack: 'weights',
-                order: 2
-            },
-            {
-                type: 'bar',
-                label: 'Other sections weight (%)',
-                data: otherShare,
-                backgroundColor: '#FCD9B6CC',
-                borderColor: '#FDBA74',
-                borderWidth: 1,
-                stack: 'weights',
-                order: 2
-            }
-        ]
-        : [
-            {
-                type: 'bar',
-                label: 'Fuel weight (%)',
-                data: fuelShare,
-                backgroundColor: '#B45309CC',
-                borderColor: '#92400E',
-                borderWidth: 1,
-                stack: 'weights',
-                order: 2
-            },
-            {
-                type: 'bar',
-                label: 'Other sections weight (%)',
-                data: otherShare,
-                backgroundColor: '#FCD9B6CC',
-                borderColor: '#FDBA74',
-                borderWidth: 1,
-                stack: 'weights',
-                order: 2
-            }
+    let shareDatasets = [];
+    if (hasDetailedOilProducts) {
+        shareDatasets = [
+            { type: 'bar', label: 'Crude oil (%)', data: crudeOilShare, backgroundColor: '#7C2D12CC', borderColor: '#7C2D12', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Natural gas liquids (%)', data: nglShare, backgroundColor: '#0F766ECC', borderColor: '#0F766E', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'LPG (%)', data: lpgShare, backgroundColor: '#EA580CCC', borderColor: '#EA580C', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Naphtha (%)', data: naphthaShare, backgroundColor: '#F59E0BCC', borderColor: '#F59E0B', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Jet fuel (%)', data: jetFuelShare, backgroundColor: '#0EA5E9CC', borderColor: '#0EA5E9', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Motor gasoline (%)', data: motorGasolineShare, backgroundColor: '#38BDF8CC', borderColor: '#38BDF8', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Diesel (%)', data: dieselShare, backgroundColor: '#1E40AFCC', borderColor: '#1E40AF', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Gas/other fuels (%)', data: gasShare, backgroundColor: '#F59E0BCC', borderColor: '#B45309', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Other sections weight (%)', data: otherShare, backgroundColor: '#FCD9B6CC', borderColor: '#FDBA74', borderWidth: 1, stack: 'weights', order: 2 },
         ];
+    } else if (hasOilGasSplit) {
+        shareDatasets = [
+            { type: 'bar', label: 'Oil weight (%)', data: oilShare, backgroundColor: '#B45309CC', borderColor: '#92400E', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Gas weight (%)', data: gasShare, backgroundColor: '#F59E0BCC', borderColor: '#B45309', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Other sections weight (%)', data: otherShare, backgroundColor: '#FCD9B6CC', borderColor: '#FDBA74', borderWidth: 1, stack: 'weights', order: 2 },
+        ];
+    } else {
+        shareDatasets = [
+            { type: 'bar', label: 'Fuel weight (%)', data: fuelShare, backgroundColor: '#B45309CC', borderColor: '#92400E', borderWidth: 1, stack: 'weights', order: 2 },
+            { type: 'bar', label: 'Other sections weight (%)', data: otherShare, backgroundColor: '#FCD9B6CC', borderColor: '#FDBA74', borderWidth: 1, stack: 'weights', order: 2 },
+        ];
+    }
 
     const existingChart = chartConfig.getChart();
     if (existingChart) {
@@ -2038,70 +1958,6 @@ function renderCountryRealFuelChart(payload, chartConfig) {
         const splitSuffix = hasEstimatedSplit ? ' · oil/gas split estimated from Eurozone mix' : '';
         titleElement.textContent = `${chartConfig.countryLabel} import composition bar (oil and gases shares in total imports) (${payload.start_year || 'N/A'}→${payload.end_year || 'N/A'})${splitSuffix}`;
     }
-}
-
-async function fetchAndRenderUsRealEnergy() {
-    let payload = null;
-    const currentYear = new Date().getFullYear();
-    const startYear = Math.max(2019, currentYear - 6);
-    const endYear = currentYear - 1;
-    const titleElement = document.getElementById('usFuelTitle');
-    if (titleElement) {
-        titleElement.textContent = 'United States oil and gas net exports (real data) — loading… this can take up to ~1 minute';
-    }
-
-    try {
-        payload = await fetchJsonWithTimeout(
-            `${API_BASE}/api/us-real-energy-imports?start_year=${startYear}&end_year=${endYear}`,
-            18000
-        );
-    } catch (error) {
-        console.warn('US real endpoint unavailable, trying Census client fallback.', error);
-        if (titleElement) {
-            titleElement.textContent = 'United States oil and gas net exports (real data) — server slow, trying direct Census fallback…';
-        }
-    }
-
-    const hasServerOilGasValues = !!(payload && Array.isArray(payload.points) && payload.points.some(point =>
-        (point.oil_net_imports_usd != null && Number.isFinite(Number(point.oil_net_imports_usd))) ||
-        (point.gas_net_imports_usd != null && Number.isFinite(Number(point.gas_net_imports_usd)))
-    ));
-
-    if (payload && Array.isArray(payload.points) && payload.points.length > 0 && !hasServerOilGasValues) {
-        try {
-            if (titleElement) {
-                titleElement.textContent = 'United States oil and gas net exports (real data) — server returned empty oil/gas values, trying direct Census fallback…';
-            }
-            payload = await buildUsRealEnergyFromCensus(startYear, endYear);
-        } catch (error) {
-            console.warn('Direct Census fallback also unavailable after empty backend payload.', error);
-        }
-    }
-
-    if (!payload || !Array.isArray(payload.points) || payload.points.length === 0) {
-        try {
-            payload = await buildUsRealEnergyFromCensus(startYear, endYear);
-        } catch (error) {
-            throw new Error('Census client fallback unavailable for U.S. oil/gas net-exports series.');
-        }
-    }
-
-    try {
-        const brentMap = await getBrentAnnualMap();
-        if (brentMap.size && Array.isArray(payload.points)) {
-            payload.points = payload.points.map(point => {
-                const year = Number(point.year);
-                return {
-                    ...point,
-                    brent_usd_per_barrel: Number.isFinite(year) ? (brentMap.get(year) ?? null) : null,
-                };
-            });
-        }
-    } catch (error) {
-        console.warn('Brent enrichment unavailable for U.S. chart.', error);
-    }
-
-    renderUsRealChart(payload);
 }
 
 async function fetchAndRenderEnergyTrade() {
@@ -2326,6 +2182,13 @@ async function fetchAndRenderPetrochemImports() {
     renderPetrochemCountriesChart(points, definitionLabel);
 }
 
+async function fetchAndRenderPetrochemTopExportersShare() {
+    const response = await fetch(`${API_BASE}/api/petrochem-top-exporters-share-world?start_year=2018&top_n=5`);
+    if (!response.ok) throw new Error(`Server error ${response.status}`);
+    const payload = await response.json();
+    renderPetrochemTopExportersShareChart(payload);
+}
+
 async function fetchAndRenderCountryRealFuel(geo, chartConfig) {
     const response = await fetch(`${API_BASE}/api/eurostat-country-imports-fuel-real?geo=${encodeURIComponent(geo)}`);
     if (!response.ok) throw new Error(`Server error ${response.status}`);
@@ -2375,22 +2238,22 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
+        await fetchAndRenderPetrochemTopExportersShare();
+    } catch (error) {
+        console.error('Error loading petrochemicals exports chart:', error);
+        const title = document.getElementById('petrochemTopExportersTitle');
+        if (title) {
+            title.textContent = 'Petrochemicals exports chart failed to load';
+        }
+    }
+
+    try {
         await fetchAndRenderFertilizerExportsShare();
     } catch (error) {
         console.error('Error loading fertilizer exports share chart:', error);
         const title = document.getElementById('fertilizerExportsTitle');
         if (title) {
             title.textContent = 'Fertilizer exports share chart failed to load';
-        }
-    }
-
-    try {
-        await fetchAndRenderUsRealEnergy();
-    } catch (error) {
-        console.error('Error loading U.S. real energy chart:', error);
-        const titleElement = document.getElementById('usFuelTitle');
-        if (titleElement) {
-            titleElement.textContent = 'United States oil/gas net-exports chart failed to load (real-data route unavailable)';
         }
     }
 

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urea — Gulf Export Destinations</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Urea — Gulf Export Destinations</h1>
+            <p class="subtitle">Top importers of Gulf urea by dependence and by volume, plus top exporters</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="energy_trade.html" class="nav-link">Energy Fuels Trade</a>
+                <a href="energy_europe.html" class="nav-link">Energy in Europe</a>
+                <a href="commodity_trade.html" class="nav-link">Commodity Trade</a>
+                <a href="sulfur.html" class="nav-link">Sulfur</a>
+                <a href="urea.html" class="nav-link active">Urea</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Top 5 by Dependence on Gulf Urea</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="gulfUreaDependenceTitle" class="chart-title">Loading urea dependence data…</h3>
+                <canvas id="gulfUreaDependenceChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadGulfUreaDependenceBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download dependence graph (PNG)
+                </button>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Dependence filter:</strong> Only countries importing at least <code>1%</code> of world urea imports in the latest available year are included.
+            </div>
+
+            <h2 class="section-title">Latest Year Ranking by Dependence</h2>
+            <div class="chart-container" style="height: 380px;">
+                <h3 id="gulfUreaDependenceRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="gulfUreaDependenceRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+
+            <h2 class="section-title">Top 5 Urea Importers by Value of Imports from Gulf Suppliers</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="gulfUreaVolumeTitle" class="chart-title">Loading urea volume data…</h3>
+                <canvas id="gulfUreaVolumeChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadGulfUreaVolumeBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download volume graph (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Latest Year Ranking by Volume</h2>
+            <div class="chart-container" style="height: 380px;">
+                <h3 id="gulfUreaVolumeRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div style="margin-top: 10px; margin-bottom: 8px;">
+                    <button id="downloadGulfUreaVolumeRankingBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                        Download volume ranking table (PNG)
+                    </button>
+                </div>
+                <div id="gulfUreaVolumeRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+
+            <h2 class="section-title">Top 5 Urea Exporters</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="ureaTopExportersTitle" class="chart-title">Loading top urea exporters…</h3>
+                <canvas id="ureaTopExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadUreaTopExportersBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download exporters graph (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Eurozone Extra-Eurozone Urea Import Structure</h2>
+            <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr); gap: 20px; align-items: start;">
+                <div class="chart-container" style="height: 520px;">
+                    <h3 id="eurozoneUreaStructureTitle" class="chart-title">Loading Eurozone urea supplier structure…</h3>
+                    <canvas id="eurozoneUreaStructureChart"></canvas>
+                </div>
+                <div class="methodology-note" id="eurozoneUreaTakeawayBox" style="padding: 18px; border: 1px solid #D1D5DB; border-radius: 12px; background: #F8FAFC;">
+                    <strong>Takeaway</strong>
+                    <div id="eurozoneUreaTakeawayContent" style="margin-top: 10px;">Loading takeaway…</div>
+                </div>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadEurozoneUreaStructureBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Eurozone urea structure graph (PNG)
+                </button>
+            </div>
+
+            <div class="methodology-note" style="margin-top: 14px;">
+                <strong>Scope:</strong> OEC urea data for HS6 <code>310210</code>. Gulf exporters are Bahrain, Kuwait, Oman, Qatar, Saudi Arabia, and United Arab Emirates. The dependence chart shows Gulf urea imports as a share of each importer's total urea imports. The volume chart shows absolute Gulf urea imports in USD. The exporter chart shows the top 5 exporters as a share of world urea exports. The Eurozone structure chart shows latest-year supplier shares of extra-Eurozone urea imports, with Hormuz / Gulf suppliers grouped together.
+            </div>
+        </main>
+    </div>
+
+    <script src="urea.js"></script>
+</body>
+</html>

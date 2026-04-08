@@ -10,472 +10,386 @@
 	</tr>
 </table><table><tr><td> </td></tr></table><table id="ctl00_PageContent_GridLabelUnitTable" border="0">
 	<tr>
-		<td><span id="ctl00_PageContent_Label_Unit" class="Comment">Unit : US Dollar thousand</span></td>
+		<td></td>
 	</tr>
 </table><table><tr><td> </td></tr></table><div>
 	<table cellspacing="0" cellpadding="4" rules="all" border="1" id="ctl00_PageContent_MyGridView1" style="color:#002B54;border-color:#002B54;width:100%;border-collapse:collapse;">
 		<tr style="color:White;background-color:#5D7B9D;font-size:80%;font-weight:bold;">
-			<th scope="col">Importers</th><th scope="col">Imported value in 2024-M05</th><th scope="col">Imported value in 2024-M06</th><th scope="col">Imported value in 2024-M07</th><th scope="col">Imported value in 2024-M08</th><th scope="col">Imported value in 2024-M09</th><th scope="col">Imported value in 2024-M10</th><th scope="col">Imported value in 2024-M11</th><th scope="col">Imported value in 2024-M12</th><th scope="col">Imported value in 2025-M01</th><th scope="col">Imported value in 2025-M02</th><th scope="col">Imported value in 2025-M03</th><th scope="col">Imported value in 2025-M04</th><th scope="col">Imported value in 2025-M05</th><th scope="col">Imported value in 2025-M06</th><th scope="col">Imported value in 2025-M07</th><th scope="col">Imported value in 2025-M08</th><th scope="col">Imported value in 2025-M09</th><th scope="col">Imported value in 2025-M10</th><th scope="col">Imported value in 2025-M11</th><th scope="col">Imported value in 2025-M12</th>
+			<th rowspan="2" scope="col">Importers</th><td align="center" colspan="2">2025-M01</td><td align="center" colspan="2">2025-M02</td><td align="center" colspan="2">2025-M03</td><td align="center" colspan="2">2025-M04</td><td align="center" colspan="2">2025-M05</td><td align="center" colspan="2">2025-M06</td><td align="center" colspan="2">2025-M07</td><td align="center" colspan="2">2025-M08</td><td align="center" colspan="2">2025-M09</td><td align="center" colspan="2">2025-M10</td><td align="center" colspan="2">2025-M11</td><td align="center" colspan="2">2025-M12</td>
+		</tr><tr style="color:White;background-color:#5D7B9D;font-size:80%;font-weight:bold;">
+			<th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th><th scope="col">Imported quantity</th><th scope="col">Unit</th>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Brazil
-                                </td><td>997887</td><td>1305688</td><td>1429357</td><td>1551102</td><td>1499006</td><td>1508960</td><td>1246286</td><td>963817</td><td>929573</td><td>726144</td><td>813452</td><td>1234837</td><td>1260568</td><td>1453187</td><td>1739619</td><td>1868633</td><td>1553324</td><td>1613263</td><td>1093106</td><td>1208202</td>
+                                </td><td>2990134369</td><td>Kilograms</td><td>2290848350</td><td>Kilograms</td><td>2609000895</td><td>Kilograms</td><td>3637356256</td><td>Kilograms</td><td>3741164926</td><td>Kilograms</td><td>4147897391</td><td>Kilograms</td><td>4793805726</td><td>Kilograms</td><td>5223701089</td><td>Kilograms</td><td>4312302782</td><td>Kilograms</td><td>4565642871</td><td>Kilograms</td><td>3361009632</td><td>Kilograms</td><td>3831777438</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             China
-                                </td><td>386411</td><td>324903</td><td>294793</td><td>335761</td><td>389862</td><td>343720</td><td>349489</td><td>441597</td><td>407037</td><td>377867</td><td>398821</td><td>391115</td><td>368151</td><td>261467</td><td>249859</td><td>322113</td><td>474735</td><td>511319</td><td>537077</td><td>577892</td>
+                                </td><td>1322240843</td><td>Kilograms</td><td>1236446186</td><td>Kilograms</td><td>1330172279</td><td>Kilograms</td><td>1234167806</td><td>Kilograms</td><td>1129678327</td><td>Kilograms</td><td>766232259</td><td>Kilograms</td><td>683150415</td><td>Kilograms</td><td>861069391</td><td>Kilograms</td><td>1237270701</td><td>Kilograms</td><td>1367371044</td><td>Kilograms</td><td>1427161901</td><td>Kilograms</td><td>1585398531</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            United States of America
-                                </td><td>749839</td><td>744432</td><td>559256</td><td>623250</td><td>624234</td><td>782764</td><td>527335</td><td>703418</td><td>844108</td><td>906790</td><td>1094906</td><td>1066498</td><td>775783</td><td>514334</td><td>618621</td><td>724266</td><td>614440</td><td>648504</td><td>630286</td><td>557246</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             France
-                                </td><td>136357</td><td>205446</td><td>257800</td><td>221356</td><td>231820</td><td>243611</td><td>244327</td><td>204440</td><td>181882</td><td>196358</td><td>263118</td><td>169153</td><td>197096</td><td>244900</td><td>297038</td><td>278496</td><td>281094</td><td>368301</td><td>352304</td><td>430581</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Australia
-                                </td><td>281705</td><td>275313</td><td>219033</td><td>207232</td><td>101143</td><td>158027</td><td>122223</td><td>291131</td><td>325790</td><td>380430</td><td>380392</td><td>410206</td><td>283779</td><td>233718</td><td>281297</td><td>177595</td><td>123184</td><td>128064</td><td>280260</td><td>282975</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Spain
-                                </td><td>96105</td><td>77349</td><td>80562</td><td>93822</td><td>156724</td><td>182399</td><td>133320</td><td>112210</td><td>137083</td><td>151665</td><td>140992</td><td>142554</td><td>111466</td><td>148394</td><td>132313</td><td>148221</td><td>179011</td><td>169565</td><td>150895</td><td>270203</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Türkiye
-                                </td><td>134734</td><td>76474</td><td>109906</td><td>115523</td><td>136998</td><td>104965</td><td>114563</td><td>204534</td><td>265678</td><td>253979</td><td>207946</td><td>201659</td><td>108355</td><td>64618</td><td>73318</td><td>101264</td><td>219107</td><td>141566</td><td>104804</td><td>262699</td>
+                                </td><td>559221229</td><td>Kilograms</td><td>562105889</td><td>Kilograms</td><td>685719365</td><td>Kilograms</td><td>449837504</td><td>Kilograms</td><td>483553675</td><td>Kilograms</td><td>687291020</td><td>Kilograms</td><td>846396457</td><td>Kilograms</td><td>756972402</td><td>Kilograms</td><td>744078522</td><td>Kilograms</td><td>945580028</td><td>Kilograms</td><td>874088373</td><td>Kilograms</td><td>981735853</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Indonesia
-                                </td><td>153708</td><td>126413</td><td>212026</td><td>194254</td><td>133034</td><td>179961</td><td>172165</td><td>193032</td><td>222095</td><td>151982</td><td>221978</td><td>234126</td><td>153915</td><td>225391</td><td>268266</td><td>237108</td><td>234311</td><td>199081</td><td>109068</td><td>254113</td>
+                                </td><td>725569369</td><td>Kilograms</td><td>703599848</td><td>Kilograms</td><td>808144217</td><td>Kilograms</td><td>810586593</td><td>Kilograms</td><td>491960247</td><td>Kilograms</td><td>705844878</td><td>Kilograms</td><td>828324912</td><td>Kilograms</td><td>702820029</td><td>Kilograms</td><td>700852813</td><td>Kilograms</td><td>687737260</td><td>Kilograms</td><td>377171593</td><td>Kilograms</td><td>812798777</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Canada
-                                </td><td>281881</td><td>103009</td><td>102875</td><td>147501</td><td>200521</td><td>235218</td><td>303772</td><td>273991</td><td>188636</td><td>177810</td><td>259375</td><td>372515</td><td>240298</td><td>117099</td><td>113251</td><td>215477</td><td>231199</td><td>244195</td><td>326144</td><td>231708</td>
+                            Spain
+                                </td><td>321068527</td><td>Kilograms</td><td>317685550</td><td>Kilograms</td><td>269581777</td><td>Kilograms</td><td>269538420</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>294848537</td><td>Kilograms</td><td>267006224</td><td>Kilograms</td><td>252333891</td><td>Kilograms</td><td>311313092</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>576110030</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Germany
-                                </td><td>109623</td><td>123921</td><td>122953</td><td>100939</td><td>113629</td><td>115931</td><td>128708</td><td>126095</td><td>169724</td><td>213893</td><td>201309</td><td>156969</td><td>154054</td><td>197628</td><td>148223</td><td>124515</td><td>133481</td><td>149804</td><td>219019</td><td>194819</td>
+                            Canada
+                                </td><td>330149206</td><td>Kilograms</td><td>305582000</td><td>Kilograms</td><td>430287561</td><td>Kilograms</td><td>674511587</td><td>Kilograms</td><td>449096329</td><td>Kilograms</td><td>246004198</td><td>Kilograms</td><td>206095761</td><td>Kilograms</td><td>361859475</td><td>Kilograms</td><td>386951016</td><td>Kilograms</td><td>409735953</td><td>Kilograms</td><td>580423574</td><td>Kilograms</td><td>415608249</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             United Kingdom
-                                </td><td>91443</td><td>109180</td><td>98777</td><td>96687</td><td>86185</td><td>122597</td><td>79039</td><td>93234</td><td>122759</td><td>141203</td><td>159780</td><td>174365</td><td>140626</td><td>115098</td><td>120396</td><td>159629</td><td>138970</td><td>114474</td><td>123427</td><td>130941</td>
+                                </td><td>319996055</td><td>Kilograms</td><td>391426463</td><td>Kilograms</td><td>398473322</td><td>Kilograms</td><td>403817374</td><td>Kilograms</td><td>349572623</td><td>Kilograms</td><td>295336133</td><td>Kilograms</td><td>305168836</td><td>Kilograms</td><td>374571205</td><td>Kilograms</td><td>307179425</td><td>Kilograms</td><td>255449150</td><td>Kilograms</td><td>281113126</td><td>Kilograms</td><td>300442370</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Malaysia
+                                </td><td>318475415</td><td>Kilograms</td><td>186487099</td><td>Kilograms</td><td>379938921</td><td>Kilograms</td><td>312839832</td><td>Kilograms</td><td>367236137</td><td>Kilograms</td><td>359146468</td><td>Kilograms</td><td>392361159</td><td>Kilograms</td><td>459760612</td><td>Kilograms</td><td>318129256</td><td>Kilograms</td><td>306123199</td><td>Kilograms</td><td>247559118</td><td>Kilograms</td><td>276462145</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Colombia
+                                </td><td>182329924</td><td>Kilograms</td><td>258636172</td><td>Kilograms</td><td>199945676</td><td>Kilograms</td><td>233918412</td><td>Kilograms</td><td>225123778</td><td>Kilograms</td><td>177143965</td><td>Kilograms</td><td>148458441</td><td>Kilograms</td><td>166309990</td><td>Kilograms</td><td>158058353</td><td>Kilograms</td><td>192134197</td><td>Kilograms</td><td>212390783</td><td>Kilograms</td><td>237183590</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Argentina
-                                </td><td>150851</td><td>183541</td><td>217819</td><td>149005</td><td>208838</td><td>193097</td><td>104055</td><td>39098</td><td>61785</td><td>39407</td><td>80725</td><td>109388</td><td>195825</td><td>257167</td><td>214843</td><td>210143</td><td>328796</td><td>432694</td><td>208462</td><td>116876</td>
+                                </td><td>159243128</td><td>Kilograms</td><td>63471673</td><td>Kilograms</td><td>138370948</td><td>Kilograms</td><td>183662277</td><td>Kilograms</td><td>350403108</td><td>Kilograms</td><td>444491694</td><td>Kilograms</td><td>414839657</td><td>Kilograms</td><td>373552347</td><td>Kilograms</td><td>562689827</td><td>Kilograms</td><td>743398011</td><td>Kilograms</td><td>404706905</td><td>Kilograms</td><td>231533735</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Thailand
-                                </td><td>249612</td><td>226165</td><td>322751</td><td>260727</td><td>286790</td><td>167753</td><td>102503</td><td>83524</td><td>207859</td><td>176175</td><td>184560</td><td>240825</td><td>340737</td><td>329201</td><td>403583</td><td>359453</td><td>220190</td><td>198596</td><td>130650</td><td>114085</td>
+                                </td><td>515422516</td><td>Kilograms</td><td>421384968</td><td>Kilograms</td><td>436218826</td><td>Kilograms</td><td>555787224</td><td>Kilograms</td><td>817364989</td><td>Kilograms</td><td>721826098</td><td>Kilograms</td><td>915039032</td><td>Kilograms</td><td>738336260</td><td>Kilograms</td><td>426385416</td><td>Kilograms</td><td>385933474</td><td>Kilograms</td><td>314430434</td><td>Kilograms</td><td>211655134</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Colombia
-                                </td><td>100185</td><td>49735</td><td>81958</td><td>71610</td><td>77509</td><td>77477</td><td>72956</td><td>79444</td><td>78036</td><td>120769</td><td>90198</td><td>101782</td><td>100580</td><td>81768</td><td>70402</td><td>76088</td><td>82649</td><td>95807</td><td>106173</td><td>103028</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Malaysia
-                                </td><td>84416</td><td>96681</td><td>104156</td><td>113835</td><td>94004</td><td>123762</td><td>82260</td><td>100790</td><td>92192</td><td>52356</td><td>125836</td><td>106479</td><td>124418</td><td>121691</td><td>130430</td><td>163203</td><td>123509</td><td>112467</td><td>93824</td><td>84660</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Greece
-                                </td><td>29119</td><td>10040</td><td>11869</td><td>19968</td><td>41950</td><td>33711</td><td>46327</td><td>37803</td><td>42615</td><td>45247</td><td>42077</td><td>34473</td><td>31177</td><td>15107</td><td>18172</td><td>16096</td><td>33371</td><td>39779</td><td>37652</td><td>76823</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Ireland
-                                </td><td>72593</td><td>29624</td><td>45240</td><td>23299</td><td>21465</td><td>22062</td><td>38704</td><td>39220</td><td>66330</td><td>58899</td><td>100606</td><td>101203</td><td>64669</td><td>63737</td><td>54866</td><td>40217</td><td>32683</td><td>35021</td><td>54877</td><td>71221</td>
+                                </td><td>184086501</td><td>Kilograms</td><td>142614876</td><td>Kilograms</td><td>228334092</td><td>Kilograms</td><td>227760611</td><td>Kilograms</td><td>151360645</td><td>Kilograms</td><td>151136708</td><td>Kilograms</td><td>129865639</td><td>Kilograms</td><td>93986448</td><td>Kilograms</td><td>79141742</td><td>Kilograms</td><td>90437732</td><td>Kilograms</td><td>116550264</td><td>Kilograms</td><td>168729810</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Greece
+                                </td><td>94368367</td><td>Kilograms</td><td>93431066</td><td>Kilograms</td><td>74156271</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>158797093</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Serbia
-                                </td><td>13252</td><td>13548</td><td>45828</td><td>37992</td><td>27124</td><td>42778</td><td>6174</td><td>23079</td><td>22994</td><td>24335</td><td>22225</td><td>30357</td><td>13434</td><td>33378</td><td>18876</td><td>34627</td><td>32577</td><td>34248</td><td>27047</td><td>62369</td>
+                                </td><td>62778418</td><td>Kilograms</td><td>61411193</td><td>Kilograms</td><td>57495506</td><td>Kilograms</td><td>91076961</td><td>Kilograms</td><td>27356115</td><td>Kilograms</td><td>82559728</td><td>Kilograms</td><td>43880221</td><td>Kilograms</td><td>70435091</td><td>Kilograms</td><td>63654274</td><td>Kilograms</td><td>76834585</td><td>Kilograms</td><td>62720093</td><td>Kilograms</td><td>145719433</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            South Africa
-                                </td><td>71926</td><td>88234</td><td>139416</td><td>101679</td><td>127372</td><td>107737</td><td>93325</td><td>20796</td><td>27480</td><td>80449</td><td>29558</td><td>46421</td><td>70544</td><td>75903</td><td>154379</td><td>165571</td><td>171994</td><td>141237</td><td>66319</td><td>53908</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Paraguay
-                                </td><td>55928</td><td>68822</td><td>92410</td><td>91414</td><td>61994</td><td>48956</td><td>63450</td><td>53997</td><td>41858</td><td>32573</td><td>31010</td><td>42800</td><td>70304</td><td>87342</td><td>100722</td><td>76428</td><td>60608</td><td>65693</td><td>85245</td><td>50056</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Korea, Republic of
-                                </td><td>34908</td><td>62461</td><td>50132</td><td>43996</td><td>48134</td><td>35820</td><td>57486</td><td>68491</td><td>61539</td><td>76121</td><td>51617</td><td>54161</td><td>73663</td><td>64087</td><td>65381</td><td>63447</td><td>60832</td><td>60038</td><td>39792</td><td>49990</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Hungary
-                                </td><td>17543</td><td>24676</td><td>41268</td><td>46752</td><td>47298</td><td>50223</td><td>26001</td><td>33755</td><td>46062</td><td>52315</td><td>38073</td><td>33456</td><td>43896</td><td>39227</td><td>46708</td><td>53048</td><td>49604</td><td>37295</td><td>49694</td><td>49918</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Chile
-                                </td><td>26212</td><td>60715</td><td>125747</td><td>56460</td><td>46064</td><td>63309</td><td>48929</td><td>18049</td><td>36685</td><td>32821</td><td>32364</td><td>46279</td><td>53665</td><td>49201</td><td>78144</td><td>85187</td><td>86362</td><td>89929</td><td>19379</td><td>49531</td>
+                                </td><td>122110944</td><td>Kilograms</td><td>130044604</td><td>Kilograms</td><td>75541637</td><td>Kilograms</td><td>65062315</td><td>Kilograms</td><td>91487069</td><td>Kilograms</td><td>74340688</td><td>Kilograms</td><td>89456300</td><td>Kilograms</td><td>108642073</td><td>Kilograms</td><td>116935118</td><td>Kilograms</td><td>85975416</td><td>Kilograms</td><td>123827381</td><td>Kilograms</td><td>116684045</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Czech Republic
-                                </td><td>25200</td><td>36781</td><td>41728</td><td>44015</td><td>35329</td><td>34036</td><td>43355</td><td>30835</td><td>40724</td><td>55610</td><td>57536</td><td>36382</td><td>35606</td><td>45256</td><td>61858</td><td>47707</td><td>46177</td><td>44405</td><td>52125</td><td>46346</td>
+                                </td><td>118321404</td><td>Kilograms</td><td>134899535</td><td>Kilograms</td><td>141014531</td><td>Kilograms</td><td>83052759</td><td>Kilograms</td><td>95175727</td><td>Kilograms</td><td>102603528</td><td>Kilograms</td><td>135480779</td><td>Kilograms</td><td>113790329</td><td>Kilograms</td><td>113232645</td><td>Kilograms</td><td>111054647</td><td>Kilograms</td><td>126887790</td><td>Kilograms</td><td>111691725</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Paraguay
+                                </td><td>103485477</td><td>Kilograms</td><td>79550496</td><td>Kilograms</td><td>73709976</td><td>Kilograms</td><td>92962464</td><td>Kilograms</td><td>162473799</td><td>Kilograms</td><td>176155454</td><td>Kilograms</td><td>207381194</td><td>Kilograms</td><td>159507116</td><td>Kilograms</td><td>110522500</td><td>Kilograms</td><td>147707155</td><td>Kilograms</td><td>168045966</td><td>Kilograms</td><td>109340816</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Korea, Republic of
+                                </td><td>140059353</td><td>Kilograms</td><td>201907798</td><td>Kilograms</td><td>125830653</td><td>Kilograms</td><td>129548643</td><td>Kilograms</td><td>184566190</td><td>Kilograms</td><td>166227127</td><td>Kilograms</td><td>151941795</td><td>Kilograms</td><td>129362332</td><td>Kilograms</td><td>150408132</td><td>Kilograms</td><td>135309299</td><td>Kilograms</td><td>99419330</td><td>Kilograms</td><td>108705552</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Lithuania
-                                </td><td>20484</td><td>49629</td><td>33809</td><td>74980</td><td>34360</td><td>41546</td><td>27798</td><td>32375</td><td>34863</td><td>42006</td><td>32755</td><td>48318</td><td>51875</td><td>46989</td><td>45129</td><td>49439</td><td>41783</td><td>39174</td><td>53796</td><td>44517</td>
+                                </td><td>95223746</td><td>Kilograms</td><td>133495743</td><td>Kilograms</td><td>95906022</td><td>Kilograms</td><td>103160023</td><td>Kilograms</td><td>116818628</td><td>Kilograms</td><td>101705967</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>96570440</td><td>Kilograms</td><td>93290674</td><td>Kilograms</td><td>116383046</td><td>Kilograms</td><td>173386380</td><td>Kilograms</td><td>107998949</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Japan
-                                </td><td>74522</td><td>56860</td><td>83400</td><td>46495</td><td>61975</td><td>79432</td><td>57700</td><td>84447</td><td>58130</td><td>48721</td><td>42256</td><td>55317</td><td>50896</td><td>94132</td><td>154318</td><td>92500</td><td>94721</td><td>98849</td><td>53652</td><td>38071</td>
+                            South Africa
+                                </td><td>77768569</td><td>Kilograms</td><td>208260597</td><td>Kilograms</td><td>92847594</td><td>Kilograms</td><td>124222362</td><td>Kilograms</td><td>226399825</td><td>Kilograms</td><td>227754965</td><td>Kilograms</td><td>373600113</td><td>Kilograms</td><td>324934081</td><td>Kilograms</td><td>349296118</td><td>Kilograms</td><td>318249945</td><td>Kilograms</td><td>158899406</td><td>Kilograms</td><td>97331824</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Taipei, Chinese
-                                </td><td>13779</td><td>31098</td><td>20742</td><td>17943</td><td>26587</td><td>17491</td><td>17359</td><td>33498</td><td>11293</td><td>11107</td><td>30551</td><td>29319</td><td>10460</td><td>41510</td><td>22154</td><td>19707</td><td>37189</td><td>24785</td><td>14751</td><td>33322</td>
+                            Chile
+                                </td><td>58749441</td><td>Kilograms</td><td>65380364</td><td>Kilograms</td><td>52224416</td><td>Kilograms</td><td>88112695</td><td>Kilograms</td><td>96696613</td><td>Kilograms</td><td>80720165</td><td>Kilograms</td><td>138123160</td><td>Kilograms</td><td>159192119</td><td>Kilograms</td><td>144374890</td><td>Kilograms</td><td>155870207</td><td>Kilograms</td><td>29396480</td><td>Kilograms</td><td>83752234</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Latvia
+                                </td><td>55836116</td><td>Kilograms</td><td>64630522</td><td>Kilograms</td><td>105737110</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>74715049</td><td>Kilograms</td><td>70013852</td><td>Kilograms</td><td>74355779</td><td>Kilograms</td><td>43059793</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>67941370</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Cambodia
+                                </td><td>67049658</td><td>Kilograms</td><td>57337595</td><td>Kilograms</td><td>65835288</td><td>Kilograms</td><td>80026543</td><td>Kilograms</td><td>118942596</td><td>Kilograms</td><td>128240928</td><td>Kilograms</td><td>101430764</td><td>Kilograms</td><td>68629515</td><td>Kilograms</td><td>82757440</td><td>Kilograms</td><td>86193867</td><td>Kilograms</td><td>82726112</td><td>Kilograms</td><td>61988741</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Portugal
-                                </td><td>39304</td><td>28265</td><td>27582</td><td>25236</td><td>27138</td><td>31401</td><td>27593</td><td>35265</td><td>22174</td><td>34270</td><td>43411</td><td>36384</td><td>37224</td><td>36416</td><td>28753</td><td>24758</td><td>29108</td><td>28666</td><td>32276</td><td>31525</td>
+                                </td><td>46876956</td><td>Kilograms</td><td>67401151</td><td>Kilograms</td><td>82164891</td><td>Kilograms</td><td>64619864</td><td>Kilograms</td><td>70353982</td><td>Kilograms</td><td>70675220</td><td>Kilograms</td><td>50324372</td><td>Kilograms</td><td>46153118</td><td>Kilograms</td><td>50104476</td><td>Kilograms</td><td>51463981</td><td>Kilograms</td><td>60002789</td><td>Kilograms</td><td>57855538</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             New Zealand
-                                </td><td>6049</td><td>24859</td><td>53913</td><td>103396</td><td>64767</td><td>34303</td><td>73407</td><td>22414</td><td>39594</td><td>38285</td><td>38110</td><td>6542</td><td>16546</td><td>28368</td><td>72412</td><td>127546</td><td>91413</td><td>152607</td><td>47954</td><td>28390</td>
+                                </td><td>103268828</td><td>Kilograms</td><td>69346240</td><td>Kilograms</td><td>74734484</td><td>Kilograms</td><td>12978470</td><td>Kilograms</td><td>25369571</td><td>Kilograms</td><td>79967585</td><td>Kilograms</td><td>153316655</td><td>Kilograms</td><td>250528922</td><td>Kilograms</td><td>179601680</td><td>Kilograms</td><td>305333227</td><td>Kilograms</td><td>85194316</td><td>Kilograms</td><td>50750963</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Cambodia
-                                </td><td>36577</td><td>40596</td><td>48209</td><td>35440</td><td>31522</td><td>39697</td><td>40898</td><td>30696</td><td>28079</td><td>19054</td><td>18744</td><td>32257</td><td>49742</td><td>57070</td><td>44874</td><td>33043</td><td>38557</td><td>34786</td><td>36466</td><td>27162</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Latvia
-                                </td><td>12941</td><td>17797</td><td>31701</td><td>32075</td><td>19098</td><td>17014</td><td>17500</td><td>20196</td><td>18850</td><td>23187</td><td>41289</td><td>34538</td><td>37086</td><td>38313</td><td>33891</td><td>15943</td><td>10798</td><td>13314</td><td>20605</td><td>26986</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Dominican Republic
-                                </td><td>14999</td><td>15473</td><td>12005</td><td>9264</td><td>11495</td><td>19100</td><td>7008</td><td>17004</td><td>10930</td><td>18596</td><td>13338</td><td>11511</td><td>16737</td><td>16026</td><td>23692</td><td>14855</td><td>6788</td><td>16357</td><td>16835</td><td>19758</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Costa Rica
-                                </td><td>29562</td><td>20406</td><td>21654</td><td>20619</td><td>16707</td><td>18720</td><td>19641</td><td>23859</td><td>19392</td><td>19654</td><td>24486</td><td>5567</td><td>8479</td><td>28490</td><td>17165</td><td>38088</td><td>14830</td><td>17921</td><td>8770</td><td>18813</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Switzerland
-                                </td><td>9401</td><td>10106</td><td>14148</td><td>13470</td><td>12683</td><td>13904</td><td>12404</td><td>13424</td><td>14658</td><td>13604</td><td>17016</td><td>14147</td><td>9954</td><td>14046</td><td>16090</td><td>14041</td><td>17868</td><td>17423</td><td>13597</td><td>15939</td>
+                                </td><td>47493093</td><td>Kilograms</td><td>44389637</td><td>Kilograms</td><td>52764166</td><td>Kilograms</td><td>9655083</td><td>Kilograms</td><td>17328550</td><td>Kilograms</td><td>58562509</td><td>Kilograms</td><td>32339471</td><td>Kilograms</td><td>78428984</td><td>Kilograms</td><td>28795766</td><td>Kilograms</td><td>37615954</td><td>Kilograms</td><td>12960922</td><td>Kilograms</td><td>39443725</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Panama
-                                </td><td>14279</td><td>6054</td><td>4036</td><td>12730</td><td>8384</td><td>6469</td><td>2685</td><td>2784</td><td>5129</td><td>7940</td><td>12791</td><td>8405</td><td>10683</td><td>9522</td><td>5267</td><td>7588</td><td>2305</td><td>5255</td><td>3377</td><td>13032</td>
+                            Dominican Republic
+                                </td><td>24533320</td><td>Kilograms</td><td>35289840</td><td>Kilograms</td><td>27665406</td><td>Kilograms</td><td>21912678</td><td>Kilograms</td><td>29235163</td><td>Kilograms</td><td>35015439</td><td>Kilograms</td><td>49648156</td><td>Kilograms</td><td>28972638</td><td>Kilograms</td><td>10391635</td><td>Kilograms</td><td>24798118</td><td>Kilograms</td><td>28329412</td><td>Kilograms</td><td>35483658</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Mongolia
-                                </td><td>4221</td><td>4513</td><td>6427</td><td>4958</td><td>1809</td><td>6482</td><td>8729</td><td>4887</td><td>3108</td><td>3582</td><td>5751</td><td>12252</td><td>10902</td><td>5738</td><td>8718</td><td>7723</td><td>15776</td><td>8166</td><td>4438</td><td>10626</td>
+                                </td><td>11315870</td><td>Kilograms</td><td>11331780</td><td>Kilograms</td><td>18047731</td><td>Kilograms</td><td>35911699</td><td>Kilograms</td><td>31088524</td><td>Kilograms</td><td>16572765</td><td>Kilograms</td><td>28286163</td><td>Kilograms</td><td>23117726</td><td>Kilograms</td><td>41985950</td><td>Kilograms</td><td>21432780</td><td>Kilograms</td><td>13011604</td><td>Kilograms</td><td>31586537</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Estonia
-                                </td><td>7397</td><td>4376</td><td>10608</td><td>7254</td><td>5627</td><td>6669</td><td>8877</td><td>11132</td><td>10752</td><td>8935</td><td>16326</td><td>14856</td><td>13676</td><td>8642</td><td>9873</td><td>6596</td><td>7533</td><td>5336</td><td>12303</td><td>9015</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Bolivia, Plurinational State of
-                                </td><td>5860</td><td>6993</td><td>5937</td><td>4386</td><td>7424</td><td>15250</td><td>12037</td><td>8555</td><td>3540</td><td>4862</td><td>4779</td><td>6186</td><td>4549</td><td>5000</td><td>5604</td><td>7137</td><td>7164</td><td>17016</td><td>11442</td><td>8672</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Bosnia and Herzegovina
-                                </td><td>4788</td><td>2424</td><td>2282</td><td>2214</td><td>3025</td><td>3084</td><td>3418</td><td>4801</td><td>5116</td><td>8099</td><td>9138</td><td>7475</td><td>4184</td><td>3351</td><td>1025</td><td>2351</td><td>6324</td><td>7111</td><td>7106</td><td>6637</td>
+                            Switzerland
+                                </td><td>26520745</td><td>Kilograms</td><td>21724435</td><td>Kilograms</td><td>26662878</td><td>Kilograms</td><td>24067069</td><td>Kilograms</td><td>17334927</td><td>Kilograms</td><td>28531386</td><td>Kilograms</td><td>28452324</td><td>Kilograms</td><td>28430918</td><td>Kilograms</td><td>30790554</td><td>Kilograms</td><td>30702091</td><td>Kilograms</td><td>24015752</td><td>Kilograms</td><td>27063557</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             El Salvador
-                                </td><td>13694</td><td>12030</td><td>13276</td><td>8374</td><td>6034</td><td>3761</td><td>1808</td><td>935</td><td>7469</td><td>10433</td><td>5437</td><td>3443</td><td>4926</td><td>5042</td><td>15146</td><td>5928</td><td>3557</td><td>2484</td><td>2488</td><td>5594</td>
+                                </td><td>23895611</td><td>Kilograms</td><td>35228897</td><td>Kilograms</td><td>13102505</td><td>Kilograms</td><td>7320881</td><td>Kilograms</td><td>10217936</td><td>Kilograms</td><td>10046068</td><td>Kilograms</td><td>52168900</td><td>Kilograms</td><td>11519798</td><td>Kilograms</td><td>6563894</td><td>Kilograms</td><td>4096392</td><td>Kilograms</td><td>4593555</td><td>Kilograms</td><td>26311390</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Norway
-                                </td><td>14332</td><td>13329</td><td>7933</td><td>9305</td><td>6151</td><td>12476</td><td>7425</td><td>5760</td><td>7417</td><td>7542</td><td>8384</td><td>11350</td><td>26806</td><td>14917</td><td>10717</td><td>12693</td><td>7689</td><td>13701</td><td>14773</td><td>5560</td>
+                            Panama
+                                </td><td>10993395</td><td>Kilograms</td><td>14252991</td><td>Kilograms</td><td>24958924</td><td>Kilograms</td><td>17008030</td><td>Kilograms</td><td>20831093</td><td>Kilograms</td><td>16195008</td><td>Kilograms</td><td>10262371</td><td>Kilograms</td><td>13503512</td><td>Kilograms</td><td>2537020</td><td>Kilograms</td><td>9391047</td><td>Kilograms</td><td>4987263</td><td>Kilograms</td><td>21615849</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Belize
-                                </td><td>1957</td><td>2936</td><td>1341</td><td>2580</td><td>2157</td><td>1853</td><td>1863</td><td>3881</td><td>1915</td><td>2449</td><td>1239</td><td>1522</td><td>3210</td><td>4866</td><td>2411</td><td>3580</td><td>1111</td><td>1117</td><td>1861</td><td>5082</td>
+                                </td><td>9193454</td><td>Pounds</td><td>10766361</td><td>Pounds</td><td>3371682</td><td>Pounds</td><td>5137204</td><td>Pounds</td><td>10357439</td><td>Pounds</td><td>14311792</td><td>Pounds</td><td>6958185</td><td>Pounds</td><td>11108892</td><td>Pounds</td><td>2490057</td><td>Pounds</td><td>1951345</td><td>Pounds</td><td>4453901</td><td>Pounds</td><td>18019660</td><td>Pounds</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Burkina Faso
-                                </td><td>10833</td><td>7479</td><td>10181</td><td>8822</td><td>1914</td><td>1242</td><td>5149</td><td>8322</td><td>15083</td><td>12440</td><td>10266</td><td>12379</td><td>15273</td><td>27569</td><td>66030</td><td>31835</td><td>7083</td><td>5719</td><td>6607</td><td>4638</td>
+                            Bosnia and Herzegovina
+                                </td><td>12476125</td><td>Kilograms</td><td>19003859</td><td>Kilograms</td><td>19384347</td><td>Kilograms</td><td>15445260</td><td>Kilograms</td><td>9718052</td><td>Kilograms</td><td>7189914</td><td>Kilograms</td><td>1603325</td><td>Kilograms</td><td>4897760</td><td>Kilograms</td><td>13385313</td><td>Kilograms</td><td>16913310</td><td>Kilograms</td><td>14449351</td><td>Kilograms</td><td>12942092</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Madagascar
-                                </td><td>538</td><td>1843</td><td>2371</td><td>1456</td><td>5120</td><td>8215</td><td>3556</td><td>3513</td><td>1225</td><td>2083</td><td>2659</td><td>3017</td><td>1655</td><td>1275</td><td>1964</td><td>2228</td><td>5202</td><td>7002</td><td>3469</td><td>4558</td>
+                            Burkina Faso
+                                </td><td>8596671</td><td>Kilograms</td><td>13751654</td><td>Kilograms</td><td>5797502</td><td>Kilograms</td><td>16125406</td><td>Kilograms</td><td>19323375</td><td>Kilograms</td><td>30298338</td><td>Kilograms</td><td>69851740</td><td>Kilograms</td><td>42117696</td><td>Kilograms</td><td>19810570</td><td>Kilograms</td><td>7094012</td><td>Kilograms</td><td>10544258</td><td>Kilograms</td><td>11799508</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Bolivia, Plurinational State of
+                                </td><td>4818515</td><td>Kilograms</td><td>6295909</td><td>Kilograms</td><td>5612384</td><td>Kilograms</td><td>7166425</td><td>Kilograms</td><td>5622426</td><td>Kilograms</td><td>5785991</td><td>Kilograms</td><td>7207715</td><td>Kilograms</td><td>9164630</td><td>Kilograms</td><td>8157290</td><td>Kilograms</td><td>19186230</td><td>Kilograms</td><td>12226132</td><td>Kilograms</td><td>9025177</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Norway
+                                </td><td>16163016</td><td>Kilograms</td><td>13006086</td><td>Kilograms</td><td>10952099</td><td>Kilograms</td><td>14147280</td><td>Kilograms</td><td>32769594</td><td>Kilograms</td><td>31646333</td><td>Kilograms</td><td>16834939</td><td>Kilograms</td><td>17302949</td><td>Kilograms</td><td>11223851</td><td>Kilograms</td><td>18987796</td><td>Kilograms</td><td>23804369</td><td>Kilograms</td><td>8908783</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Georgia
-                                </td><td>4297</td><td>2147</td><td>1744</td><td>1018</td><td>1250</td><td>3329</td><td>1345</td><td>2525</td><td>2843</td><td>3026</td><td>3911</td><td>4322</td><td>4433</td><td>2193</td><td>1790</td><td>1593</td><td>5775</td><td>1330</td><td>10032</td><td>4268</td>
+                                </td><td>5565396</td><td>Kilograms</td><td>5237894</td><td>Kilograms</td><td>6216008</td><td>Kilograms</td><td>7176587</td><td>Kilograms</td><td>9497375</td><td>Kilograms</td><td>5030288</td><td>Kilograms</td><td>4572420</td><td>Kilograms</td><td>3000404</td><td>Kilograms</td><td>8944081</td><td>Kilograms</td><td>2731371</td><td>Kilograms</td><td>5159706</td><td>Kilograms</td><td>7920399</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Singapore
-                                </td><td>888</td><td>1119</td><td>2211</td><td>1733</td><td>1261</td><td>1693</td><td>883</td><td>1253</td><td>987</td><td>1297</td><td>1296</td><td>1452</td><td>804</td><td>2173</td><td>1933</td><td>1815</td><td>1385</td><td>1718</td><td>2107</td><td>1533</td>
+                            Madagascar
+                                </td><td>1741983</td><td>Kilograms</td><td>3278575</td><td>Kilograms</td><td>4125232</td><td>Kilograms</td><td>4634519</td><td>Kilograms</td><td>3004836</td><td>Kilograms</td><td>2098862</td><td>Kilograms</td><td>3273405</td><td>Kilograms</td><td>4674907</td><td>Kilograms</td><td>5829897</td><td>Kilograms</td><td>8261269</td><td>Kilograms</td><td>5601616</td><td>Kilograms</td><td>7457152</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Hong Kong, China
-                                </td><td>1239</td><td>1119</td><td>698</td><td>1056</td><td>582</td><td>1008</td><td>627</td><td>608</td><td>703</td><td>389</td><td>1711</td><td>1320</td><td>766</td><td>821</td><td>1585</td><td>903</td><td>882</td><td>1405</td><td>840</td><td>731</td>
+                                </td><td>2285910</td><td>Kilograms</td><td>1268352</td><td>Kilograms</td><td>3077889</td><td>Kilograms</td><td>2545391</td><td>Kilograms</td><td>2260569</td><td>Kilograms</td><td>2130069</td><td>Kilograms</td><td>2352834</td><td>Kilograms</td><td>2215271</td><td>Kilograms</td><td>2336123</td><td>Kilograms</td><td>2401477</td><td>Kilograms</td><td>2600598</td><td>Kilograms</td><td>2419644</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Barbados
-                                </td><td>310</td><td>430</td><td>211</td><td>462</td><td>27</td><td>161</td><td>94</td><td>212</td><td>150</td><td>127</td><td>208</td><td>216</td><td>267</td><td>170</td><td>595</td><td>344</td><td>222</td><td>132</td><td>112</td><td>267</td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Iceland
-                                </td><td>4366</td><td>600</td><td>250</td><td>281</td><td>287</td><td>215</td><td>368</td><td>252</td><td>191</td><td>208</td><td>10913</td><td>12271</td><td>4406</td><td>382</td><td>441</td><td>378</td><td>288</td><td>244</td><td>318</td><td>252</td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Bahrain
-                                </td><td>216</td><td>124</td><td>94</td><td>273</td><td>505</td><td>260</td><td>247</td><td>148</td><td>169</td><td>160</td><td>625</td><td>333</td><td>302</td><td>258</td><td>306</td><td>140</td><td>471</td><td>314</td><td>213</td><td>230</td>
+                            United States of America
+                                </td><td>2457108</td><td>Tons</td><td>2446617</td><td>Tons</td><td>3150640</td><td>Tons</td><td>3076550</td><td>Tons</td><td>2130752</td><td>Tons</td><td>1546653</td><td>Tons</td><td>1759658</td><td>Tons</td><td>1918972</td><td>Tons</td><td>1606882</td><td>Tons</td><td>1766543</td><td>Tons</td><td>1687568</td><td>Tons</td><td>1581351</td><td>Tons</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Maldives
-                                </td><td>89</td><td>134</td><td>255</td><td>258</td><td>98</td><td>250</td><td>213</td><td>206</td><td>140</td><td>221</td><td>191</td><td>190</td><td>151</td><td>209</td><td>275</td><td>222</td><td>260</td><td>292</td><td>289</td><td>178</td>
+                                </td><td>797947</td><td>Kilograms</td><td>1519325</td><td>Kilograms</td><td>555822</td><td>Kilograms</td><td>885064</td><td>Kilograms</td><td>844232</td><td>Kilograms</td><td>1261498</td><td>Kilograms</td><td>1287875</td><td>Kilograms</td><td>938501</td><td>Kilograms</td><td>1227572</td><td>Kilograms</td><td>1415226</td><td>Kilograms</td><td>1491118</td><td>Kilograms</td><td>1123928</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Bahrain
+                                </td><td>505200</td><td>Kilograms</td><td>282515</td><td>Kilograms</td><td>1454487</td><td>Kilograms</td><td>506896</td><td>Kilograms</td><td>621897</td><td>Kilograms</td><td>302539</td><td>Kilograms</td><td>578940</td><td>Kilograms</td><td>332621</td><td>Kilograms</td><td>1150750</td><td>Kilograms</td><td>856994</td><td>Kilograms</td><td>618857</td><td>Kilograms</td><td>622692</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Germany
+                                </td><td>462977</td><td>Tons</td><td>548447</td><td>Tons</td><td>469704</td><td>Tons</td><td>383905</td><td>Tons</td><td>419092</td><td>Tons</td><td>563123</td><td>Tons</td><td>393680</td><td>Tons</td><td>320230</td><td>Tons</td><td>345413</td><td>Tons</td><td>386975</td><td>Tons</td><td>556430</td><td>Tons</td><td>488066</td><td>Tons</td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Iceland
+                                </td><td>285314</td><td>Kilograms</td><td>375911</td><td>Kilograms</td><td>18531974</td><td>Kilograms</td><td>18914693</td><td>Kilograms</td><td>6948416</td><td>Kilograms</td><td>401079</td><td>Kilograms</td><td>556207</td><td>Kilograms</td><td>354503</td><td>Kilograms</td><td>345882</td><td>Kilograms</td><td>332205</td><td>Kilograms</td><td>363734</td><td>Kilograms</td><td>298199</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Barbados
+                                </td><td>97441</td><td>Kilograms</td><td>85220</td><td>Kilograms</td><td>139753</td><td>Kilograms</td><td>180850</td><td>Kilograms</td><td>270275</td><td>Kilograms</td><td>101869</td><td>Kilograms</td><td>425488</td><td>Kilograms</td><td>293849</td><td>Kilograms</td><td>133724</td><td>Kilograms</td><td>63989</td><td>Kilograms</td><td>17036</td><td>Kilograms</td><td>184698</td><td>Kilograms</td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Taipei, Chinese
+                                </td><td>31053</td><td>Tons</td><td>25451</td><td>Tons</td><td>77369</td><td>Tons</td><td>82249</td><td>Tons</td><td>23757</td><td>Tons</td><td>113650</td><td>Tons</td><td>48750</td><td>Tons</td><td>42493</td><td>Tons</td><td>85858</td><td>Tons</td><td>58080</td><td>Tons</td><td>32508</td><td>Tons</td><td>80544</td><td>Tons</td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Japan
+                                </td><td>98254</td><td>Tons</td><td>102042</td><td>Tons</td><td>81410</td><td>Tons</td><td>94899</td><td>Tons</td><td>98059</td><td>Tons</td><td>171792</td><td>Tons</td><td>241230</td><td>Tons</td><td>142904</td><td>Tons</td><td>137066</td><td>Tons</td><td>162861</td><td>Tons</td><td>93374</td><td>Tons</td><td>64404</td><td>Tons</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Seychelles
-                                </td><td>29</td><td>9</td><td>7</td><td>38</td><td>43</td><td>2</td><td>1</td><td>9</td><td>110</td><td>20</td><td>33</td><td>28</td><td>30</td><td>52</td><td>89</td><td>33</td><td>25</td><td>30</td><td>17</td><td>51</td>
+                                </td><td>64525</td><td>Kilograms</td><td>21870</td><td>Kilograms</td><td>46124</td><td>Kilograms</td><td>26621</td><td>Kilograms</td><td>21016</td><td>Kilograms</td><td>40500</td><td>Kilograms</td><td>71612</td><td>Kilograms</td><td>28524</td><td>Kilograms</td><td>16795</td><td>Kilograms</td><td>23607</td><td>Kilograms</td><td>1051</td><td>Kilograms</td><td>58559</td><td>Kilograms</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            India
-                                </td><td>757709</td><td>617958</td><td>503068</td><td>383705</td><td>622812</td><td>1051770</td><td>1232769</td><td>1060981</td><td>667854</td><td>450255</td><td>509122</td><td>544705</td><td>523911</td><td>661652</td><td>1430074</td><td>1495242</td><td>2182879</td><td>2303677</td><td></td><td></td>
+                            Singapore
+                                </td><td>1173</td><td>Tons</td><td>1151</td><td>Tons</td><td>1380</td><td>Tons</td><td>1167</td><td>Tons</td><td>1070</td><td>Tons</td><td>1218</td><td>Tons</td><td>1338</td><td>Tons</td><td>1967</td><td>Tons</td><td>1660</td><td>Tons</td><td>2308</td><td>Tons</td><td>1723</td><td>Tons</td><td>1541</td><td>Tons</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Slovakia
-                                </td><td>9593</td><td>12883</td><td>13822</td><td>17625</td><td>16524</td><td>14293</td><td>16989</td><td>11082</td><td>17820</td><td>32784</td><td>27421</td><td>17206</td><td>13475</td><td>21375</td><td>24315</td><td>18757</td><td>16335</td><td>18604</td><td>23667</td><td></td>
+                            Türkiye
+                                </td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Slovenia
-                                </td><td>14747</td><td>10807</td><td>30382</td><td>28308</td><td>27363</td><td>12130</td><td>20572</td><td>11231</td><td>15146</td><td>28161</td><td>34042</td><td>16566</td><td>16913</td><td>50250</td><td>9793</td><td>24035</td><td>15011</td><td>13935</td><td>19876</td><td></td>
+                            Australia
+                                </td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>754494609</td><td>Kilograms</td><td>594082944</td><td>Kilograms</td><td>678731759</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Romania
-                                </td><td>49469</td><td>49828</td><td>135035</td><td>77402</td><td>63045</td><td>53080</td><td>55857</td><td>81616</td><td>117008</td><td>159526</td><td>138946</td><td>76307</td><td>67245</td><td>118535</td><td>124229</td><td>94051</td><td>70672</td><td>70439</td><td>110965</td><td></td>
+                            Estonia
+                                </td><td>31232078</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>43847007</td><td>Kilograms</td><td>35104838</td><td>Kilograms</td><td>29396862</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>18551923</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Saudi Arabia
-                                </td><td>18515</td><td>11648</td><td>20159</td><td>12377</td><td>20742</td><td>14651</td><td>16059</td><td>16104</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                            Fiji
+                                </td><td>471012</td><td>Kilograms</td><td>381864</td><td>Kilograms</td><td>1512233</td><td>Kilograms</td><td>13069839</td><td>Kilograms</td><td>2561509</td><td>Kilograms</td><td>2287793</td><td>Kilograms</td><td>344046</td><td>Kilograms</td><td>1649412</td><td>Kilograms</td><td>1570665</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Senegal
-                                </td><td>6584</td><td>10158</td><td>30618</td><td>10330</td><td>3357</td><td>3294</td><td>3541</td><td>1957</td><td>1905</td><td>2589</td><td>2371</td><td>29662</td><td>12202</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Pakistan
-                                </td><td>57814</td><td>18356</td><td>48895</td><td>104606</td><td>107444</td><td>118131</td><td>8199</td><td>60711</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Papua New Guinea
-                                </td><td>2153</td><td>6423</td><td>12995</td><td>10922</td><td>7377</td><td>7630</td><td>6954</td><td>4779</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Peru
-                                </td><td>45602</td><td>59845</td><td>91213</td><td>72135</td><td>70763</td><td>74741</td><td>89091</td><td>68998</td><td>95528</td><td>69686</td><td>52464</td><td>58174</td><td>61779</td><td>65932</td><td>93611</td><td>33947</td><td>92250</td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Philippines
-                                </td><td>67350</td><td>69807</td><td>76672</td><td>95776</td><td>62650</td><td>87648</td><td>106018</td><td>82004</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Poland
-                                </td><td>88725</td><td>92902</td><td>188394</td><td>194833</td><td>122455</td><td>89153</td><td>126953</td><td>161781</td><td>215071</td><td>214344</td><td>254199</td><td>161266</td><td>136369</td><td>258983</td><td>147093</td><td>137363</td><td>121552</td><td>110286</td><td>161698</td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Uruguay
-                                </td><td>41896</td><td>27771</td><td>36224</td><td>56827</td><td>42402</td><td>51180</td><td>18593</td><td>18322</td><td>16559</td><td>12388</td><td>15606</td><td>50579</td><td>47398</td><td>46370</td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Samoa
-                                </td><td>8</td><td>10</td><td>35</td><td>0</td><td>36</td><td>1</td><td>10</td><td>39</td><td>0</td><td>0</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Zambia
-                                </td><td>79951</td><td>43392</td><td>45192</td><td>44139</td><td>59573</td><td>74500</td><td>75841</td><td>89173</td><td>65953</td><td>42710</td><td>36390</td><td>54853</td><td>42299</td><td>45791</td><td>51531</td><td>67816</td><td>87596</td><td>82291</td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Zimbabwe
-                                </td><td>30255</td><td>12949</td><td>27744</td><td>41622</td><td>30068</td><td>33176</td><td>32613</td><td>27579</td><td>23121</td><td>8972</td><td>30134</td><td>20101</td><td>24787</td><td>19733</td><td>27277</td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Sweden
-                                </td><td>26454</td><td>40862</td><td>39655</td><td>44059</td><td>41674</td><td>31272</td><td>41002</td><td>34720</td><td>45002</td><td>40678</td><td>61571</td><td>33707</td><td>44054</td><td>58580</td><td>48855</td><td>59085</td><td>40035</td><td>49389</td><td>53958</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Togo
-                                </td><td>3220</td><td>3848</td><td>3867</td><td>757</td><td>84</td><td>66</td><td>1709</td><td>1</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Uganda
-                                </td><td>2880</td><td>6572</td><td>7786</td><td>6833</td><td>2317</td><td>3271</td><td>2144</td><td>2330</td><td>5160</td><td>4940</td><td>2797</td><td>3029</td><td>5540</td><td>10167</td><td>6728</td><td>3161</td><td>3454</td><td>4492</td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Ukraine
-                                </td><td>56651</td><td>95962</td><td>147056</td><td>123044</td><td>98029</td><td>59892</td><td>72409</td><td>101551</td><td>142783</td><td>176380</td><td>141982</td><td>100024</td><td>64875</td><td>114501</td><td>169165</td><td>144891</td><td>130424</td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Malta
-                                </td><td>213</td><td>90</td><td>219</td><td>176</td><td>182</td><td>439</td><td>105</td><td>112</td><td>178</td><td>99</td><td>234</td><td>72</td><td>47</td><td>120</td><td>95</td><td>308</td><td>269</td><td>169</td><td>197</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Mauritania
-                                </td><td>9841</td><td>674</td><td>4889</td><td>7229</td><td>2876</td><td>1424</td><td>3446</td><td>3606</td><td>9881</td><td>2593</td><td>68</td><td>4133</td><td>1067</td><td>300</td><td>3878</td><td>13765</td><td>157</td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Mauritius
-                                </td><td>957</td><td>769</td><td>792</td><td>1452</td><td>2413</td><td>2613</td><td>1504</td><td>2268</td><td>2056</td><td>512</td><td>419</td><td>830</td><td>393</td><td>910</td><td>690</td><td>1146</td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Malawi
-                                </td><td>10003</td><td>20292</td><td>21240</td><td>27813</td><td>33041</td><td>19925</td><td>26243</td><td>38849</td><td>44087</td><td>22921</td><td>3879</td><td>3142</td><td>5940</td><td>15401</td><td>21095</td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Luxembourg
-                                </td><td>2699</td><td>2000</td><td>1764</td><td>995</td><td>2230</td><td>1433</td><td>2305</td><td>2201</td><td>3669</td><td>6863</td><td>8446</td><td>5175</td><td>3986</td><td>2554</td><td>2020</td><td>1461</td><td>1595</td><td>2734</td><td>1821</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Morocco
-                                </td><td>31202</td><td>11313</td><td>40530</td><td>37264</td><td>23946</td><td>33881</td><td>44932</td><td>23588</td><td>16333</td><td>8323</td><td>11200</td><td>43743</td><td>50420</td><td>12004</td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Mozambique
-                                </td><td>10635</td><td>3516</td><td>17837</td><td>16410</td><td>19374</td><td>44678</td><td>35531</td><td>7991</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Namibia
-                                </td><td>8726</td><td>7724</td><td>4905</td><td>25637</td><td>44083</td><td>26819</td><td>20550</td><td>30882</td><td>11438</td><td>2247</td><td>2338</td><td>4566</td><td>6398</td><td>5393</td><td>15376</td><td>2686</td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Netherlands
-                                </td><td>81160</td><td>80376</td><td>66168</td><td>70864</td><td>57666</td><td>61254</td><td>65015</td><td>67718</td><td>75324</td><td>67633</td><td>94812</td><td>103188</td><td>75451</td><td>85984</td><td>74153</td><td>77759</td><td>88055</td><td>65328</td><td>78420</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Aruba
-                                </td><td>26</td><td>55</td><td>107</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Nicaragua
-                                </td><td>33485</td><td>29917</td><td>10436</td><td>13649</td><td>12373</td><td>21913</td><td>9422</td><td>11393</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Niger
-                                </td><td>1472</td><td>1347</td><td>1639</td><td>1793</td><td>1568</td><td>1487</td><td>2190</td><td>675</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Nigeria
-                                </td><td>45920</td><td>8803</td><td>31083</td><td>11861</td><td>23716</td><td>4716</td><td>17186</td><td>11078</td><td>22276</td><td>15529</td><td>1017</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Kazakhstan
-                                </td><td>21398</td><td>13986</td><td>13660</td><td>11877</td><td>9495</td><td>9336</td><td>13342</td><td>19109</td><td>10948</td><td>15771</td><td>35043</td><td>38799</td><td>26748</td><td>18525</td><td>15620</td><td>12920</td><td>13443</td><td>18068</td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Kenya
-                                </td><td>26786</td><td>43056</td><td>41223</td><td>10157</td><td>29703</td><td>46085</td><td>32324</td><td>16130</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Kuwait
-                                </td><td>1329</td><td>1786</td><td>2282</td><td>1445</td><td>2054</td><td>1426</td><td>1647</td><td>1975</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Israel
-                                </td><td>11822</td><td>10912</td><td>10475</td><td>10092</td><td>8581</td><td>14821</td><td>12600</td><td>8445</td><td>16965</td><td>12585</td><td>6015</td><td>15009</td><td>8769</td><td>8915</td><td>9121</td><td>10694</td><td>14494</td><td>10770</td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Italy
-                                </td><td>82867</td><td>59909</td><td>58843</td><td>62391</td><td>101463</td><td>69010</td><td>75293</td><td>99804</td><td>145397</td><td>133379</td><td>148562</td><td>139733</td><td>152127</td><td>85693</td><td>66841</td><td>52459</td><td>85617</td><td>98805</td><td>88166</td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Côte d'Ivoire
-                                </td><td>24472</td><td>10345</td><td>14361</td><td>19851</td><td>14547</td><td>19959</td><td>12928</td><td>19703</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                            Finland
+                                </td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td></td><td></td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Guatemala
-                                </td><td>46352</td><td>18681</td><td>28854</td><td>41941</td><td>13471</td><td>61744</td><td>39516</td><td>36557</td><td>22666</td><td>24642</td><td>39171</td><td>47297</td><td>45150</td><td>27155</td><td>56300</td><td>22865</td><td>44248</td><td>27405</td><td>47107</td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Honduras
-                                </td><td>33179</td><td>17789</td><td>30268</td><td>10369</td><td>17933</td><td>15787</td><td>22569</td><td>7942</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Armenia
-                                </td><td>3625</td><td>2234</td><td>1643</td><td>1663</td><td>2096</td><td>1072</td><td>889</td><td>1118</td><td>908</td><td>781</td><td>1902</td><td>3944</td><td>4210</td><td>3118</td><td>2714</td><td>1175</td><td>1913</td><td>2450</td><td>2359</td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Belgium
-                                </td><td>112124</td><td>99484</td><td>115850</td><td>110125</td><td>137589</td><td>139460</td><td>129602</td><td>102619</td><td>98320</td><td>83664</td><td>160389</td><td>90285</td><td>86704</td><td>107512</td><td>118562</td><td>121714</td><td>141617</td><td>138422</td><td>123775</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Bermuda
-                                </td><td>90</td><td>60</td><td>33</td><td>64</td><td>63</td><td>48</td><td>58</td><td>19</td><td>49</td><td>47</td><td>68</td><td>132</td><td>107</td><td>38</td><td>81</td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Austria
-                                </td><td>19292</td><td>21483</td><td>22949</td><td>24828</td><td>18079</td><td>17401</td><td>20263</td><td>19170</td><td>29392</td><td>30745</td><td>34021</td><td>25634</td><td>21106</td><td>19487</td><td>25715</td><td>25721</td><td>22248</td><td>30005</td><td>27728</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Bahamas
-                                </td><td>288</td><td>135</td><td>251</td><td>259</td><td>189</td><td>247</td><td>374</td><td>297</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Angola
-                                </td><td>4485</td><td>2232</td><td>4775</td><td>9756</td><td>18348</td><td>12520</td><td>9556</td><td>9407</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Antigua and Barbuda
-                                </td><td>73</td><td>37</td><td>83</td><td>37</td><td>117</td><td>153</td><td>97</td><td>37</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Azerbaijan
-                                </td><td>6586</td><td>4463</td><td>5102</td><td>5982</td><td>4845</td><td>6244</td><td>5670</td><td>3196</td><td>5148</td><td>5780</td><td>11958</td><td>10622</td><td>8887</td><td>3956</td><td>6270</td><td>4201</td><td>11239</td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Brunei Darussalam
-                                </td><td>253</td><td>129</td><td>149</td><td>103</td><td>214</td><td>100</td><td>365</td><td>95</td><td>85</td><td>51</td><td>107</td><td>81</td><td>187</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Bulgaria
-                                </td><td>20539</td><td>12208</td><td>54267</td><td>53207</td><td>25571</td><td>24831</td><td>25429</td><td>31147</td><td>39353</td><td>27338</td><td>39577</td><td>39034</td><td>32081</td><td>62942</td><td>37575</td><td>22986</td><td>34517</td><td>31270</td><td>38964</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Burundi
-                                </td><td>5000</td><td>2599</td><td>1632</td><td>3752</td><td>9104</td><td>8194</td><td>5071</td><td>4270</td><td>13781</td><td>25097</td><td>6624</td><td>4846</td><td>1111</td><td>29657</td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Botswana
-                                </td><td>1832</td><td>1675</td><td>1734</td><td>1855</td><td>1800</td><td>2398</td><td>2207</td><td>2836</td><td>2225</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Gambia
-                                </td><td>3987</td><td>3917</td><td>3970</td><td>3861</td><td>69</td><td>65</td><td>7</td><td>27</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Fiji
-                                </td><td>1554</td><td>613</td><td>178</td><td>1439</td><td>146</td><td>185</td><td>2011</td><td>482</td><td>303</td><td>310</td><td>786</td><td>3289</td><td>1211</td><td>965</td><td>218</td><td>1397</td><td>1324</td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Finland
-                                </td><td>24890</td><td>17081</td><td>17159</td><td>21976</td><td>13050</td><td>24894</td><td>15057</td><td>24816</td><td>16524</td><td>25083</td><td>16371</td><td>27499</td><td>22388</td><td>36073</td><td>15003</td><td>20292</td><td>27085</td><td>29199</td><td>26605</td><td></td>
+                                </td><td>55526883</td><td>Kilograms</td><td>62646429</td><td>Kilograms</td><td>81247059</td><td>Kilograms</td><td>123698980</td><td>Kilograms</td><td>115240835</td><td>Kilograms</td><td>60278911</td><td>Kilograms</td><td>143733296</td><td>Kilograms</td><td>50331339</td><td>Kilograms</td><td>98670728</td><td>Kilograms</td><td>47357333</td><td>Kilograms</td><td>108750455</td><td>Kilograms</td><td></td><td></td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Ecuador
-                                </td><td>53773</td><td>32313</td><td>35264</td><td>28520</td><td>42616</td><td>62835</td><td>41198</td><td>45150</td><td>37762</td><td>49428</td><td>46268</td><td>55013</td><td>50495</td><td>34120</td><td>56040</td><td>19192</td><td>45914</td><td>59777</td><td>74956</td><td></td>
+                                </td><td>87622</td><td>Tons</td><td>112313</td><td>Tons</td><td>96033</td><td>Tons</td><td>107878</td><td>Tons</td><td>102517</td><td>Tons</td><td>58487</td><td>Tons</td><td>95095</td><td>Tons</td><td>30109</td><td>Tons</td><td>87973</td><td>Tons</td><td>111722</td><td>Tons</td><td>153783</td><td>Tons</td><td></td><td></td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Croatia
-                                </td><td>9101</td><td>6115</td><td>13355</td><td>18761</td><td>18438</td><td>19312</td><td>10969</td><td>10374</td><td>17107</td><td>27002</td><td>26625</td><td>14997</td><td>7743</td><td>12216</td><td>17454</td><td>12195</td><td>20815</td><td>15618</td><td>15650</td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Cyprus
-                                </td><td>918</td><td>1340</td><td>1521</td><td>1775</td><td>2272</td><td>6870</td><td>3512</td><td>1626</td><td>1426</td><td>1593</td><td>2377</td><td>1902</td><td>1775</td><td>2816</td><td>2436</td><td>1236</td><td>3050</td><td>5623</td><td>4079</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Benin
-                                </td><td>485</td><td>188</td><td>4765</td><td>333</td><td>56</td><td>244</td><td>52</td><td>222</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
                             Denmark
-                                </td><td>14601</td><td>25697</td><td>30574</td><td>20678</td><td>36384</td><td>27244</td><td>50212</td><td>27149</td><td>25498</td><td>32143</td><td>29526</td><td>22853</td><td>36724</td><td>33750</td><td>35400</td><td>23507</td><td>25284</td><td>32534</td><td>42475</td><td></td>
-		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
-			<td align="left" style="width:30%;">
-                            Congo
-                                </td><td>956</td><td>645</td><td>1188</td><td>903</td><td>986</td><td>1305</td><td>1446</td><td>777</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                                </td><td>83124472</td><td>Kilograms</td><td>89781034</td><td>Kilograms</td><td>78096150</td><td>Kilograms</td><td>64877441</td><td>Kilograms</td><td>103279327</td><td>Kilograms</td><td>128114637</td><td>Kilograms</td><td>111820604</td><td>Kilograms</td><td>46186344</td><td>Kilograms</td><td>98187651</td><td>Kilograms</td><td>101423146</td><td>Kilograms</td><td>123352275</td><td>Kilograms</td><td></td><td></td>
 		</tr><tr align="right" style="background-color:White;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Cabo Verde
-                                </td><td>22</td><td>68</td><td>41</td><td>41</td><td>31</td><td>38</td><td>3</td><td>134</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                            Croatia
+                                </td><td>42124488</td><td>Kilograms</td><td>64854096</td><td>Kilograms</td><td>56895197</td><td>Kilograms</td><td>27908704</td><td>Kilograms</td><td>15559921</td><td>Kilograms</td><td>30952565</td><td>Kilograms</td><td>27542315</td><td>Kilograms</td><td>23297975</td><td>Kilograms</td><td>34510162</td><td>Kilograms</td><td>29535864</td><td>Kilograms</td><td>31533578</td><td>Kilograms</td><td></td><td></td>
 		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
 			<td align="left" style="width:30%;">
-                            Sri Lanka
-                                </td><td>18037</td><td>5530</td><td>17118</td><td>38311</td><td>23739</td><td>36495</td><td>10837</td><td>27184</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                            Cyprus
+                                </td><td>2115720</td><td>Kilograms</td><td>2403465</td><td>Kilograms</td><td>4021647</td><td>Kilograms</td><td>2147921</td><td>Kilograms</td><td>1670583</td><td>Kilograms</td><td>4587988</td><td>Kilograms</td><td>2689235</td><td>Kilograms</td><td>1563713</td><td>Kilograms</td><td>4032249</td><td>Kilograms</td><td>6403764</td><td>Kilograms</td><td>6571435</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Austria
+                                </td><td>57391015</td><td>Kilograms</td><td>61795835</td><td>Kilograms</td><td>59172986</td><td>Kilograms</td><td>41733843</td><td>Kilograms</td><td>38289498</td><td>Kilograms</td><td>34326868</td><td>Kilograms</td><td>48392562</td><td>Kilograms</td><td>48853114</td><td>Kilograms</td><td>44700300</td><td>Kilograms</td><td>62231678</td><td>Kilograms</td><td>55001218</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Armenia
+                                </td><td>1395594</td><td>Kilograms</td><td>1838197</td><td>Kilograms</td><td>4313389</td><td>Kilograms</td><td>9535817</td><td>Kilograms</td><td>10077724</td><td>Kilograms</td><td>5612753</td><td>Kilograms</td><td>5350935</td><td>Kilograms</td><td>2324797</td><td>Kilograms</td><td>3703459</td><td>Kilograms</td><td>3665457</td><td>Kilograms</td><td>3872344</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Belgium
+                                </td><td>331630844</td><td>Kilograms</td><td>286190574</td><td>Kilograms</td><td>510641922</td><td>Kilograms</td><td>301135200</td><td>Kilograms</td><td>307643561</td><td>Kilograms</td><td>322682404</td><td>Kilograms</td><td>339387102</td><td>Kilograms</td><td>408966271</td><td>Kilograms</td><td>414097272</td><td>Kilograms</td><td>432525241</td><td>Kilograms</td><td>372999867</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Bermuda
+                                </td><td>20439</td><td>Kilograms</td><td>4273</td><td>Kilograms</td><td>15301</td><td>Kilograms</td><td>53394</td><td>Kilograms</td><td>12640</td><td>Kilograms</td><td>10292</td><td>Kilograms</td><td>22406</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Azerbaijan
+                                </td><td>13022701</td><td>Kilograms</td><td>10515643</td><td>Kilograms</td><td>27636298</td><td>Kilograms</td><td>20190516</td><td>Kilograms</td><td>18712287</td><td>Kilograms</td><td>5130309</td><td>Kilograms</td><td>9583580</td><td>Kilograms</td><td>6436790</td><td>Kilograms</td><td>21642043</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Botswana
+                                </td><td>4038511</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Brunei Darussalam
+                                </td><td>51140</td><td>Kilograms</td><td>47072</td><td>Kilograms</td><td>114786</td><td>Kilograms</td><td>153518</td><td>Kilograms</td><td>237505</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Bulgaria
+                                </td><td>100316868</td><td>Kilograms</td><td>57460136</td><td>Kilograms</td><td>83581504</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>132953667</td><td>Kilograms</td><td>71034548</td><td>Kilograms</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td>0</td><td>Mixed</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Burundi
+                                </td><td>23354000</td><td>Kilograms</td><td>42223179</td><td>Kilograms</td><td>11920000</td><td>Kilograms</td><td>6267500</td><td>Kilograms</td><td>2021545</td><td>Kilograms</td><td>42922200</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Kazakhstan
+                                </td><td>32076606</td><td>Kilograms</td><td>44746016</td><td>Kilograms</td><td>90689725</td><td>Kilograms</td><td>89555008</td><td>Kilograms</td><td>68925864</td><td>Kilograms</td><td>54057295</td><td>Kilograms</td><td>48953146</td><td>Kilograms</td><td>37492396</td><td>Kilograms</td><td>27937534</td><td>Kilograms</td><td>56591436</td><td>Kilograms</td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Malawi
+                                </td><td>53743916</td><td>Kilograms</td><td>31830027</td><td>Kilograms</td><td>5521188</td><td>Kilograms</td><td>3757971</td><td>Kilograms</td><td>6507708</td><td>Kilograms</td><td>15899435</td><td>Kilograms</td><td>25985088</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Luxembourg
+                                </td><td>13002873</td><td>Kilograms</td><td>22278615</td><td>Kilograms</td><td>26607074</td><td>Kilograms</td><td>14930909</td><td>Kilograms</td><td>12602152</td><td>Kilograms</td><td>7784343</td><td>Kilograms</td><td>5472496</td><td>Kilograms</td><td>4206368</td><td>Kilograms</td><td>3847426</td><td>Kilograms</td><td>8390415</td><td>Kilograms</td><td>5818133</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Israel
+                                </td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td title="No quantity has been reported">No Quantity</td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Italy
+                                </td><td>314163383</td><td>Kilograms</td><td>272233469</td><td>Kilograms</td><td>260716899</td><td>Kilograms</td><td>295713491</td><td>Kilograms</td><td>340868031</td><td>Kilograms</td><td>121099595</td><td>Kilograms</td><td>113977894</td><td>Kilograms</td><td>103689019</td><td>Kilograms</td><td>137008501</td><td>Kilograms</td><td>179622492</td><td>Kilograms</td><td>137164649</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Nigeria
+                                </td><td>529305</td><td>Kilograms</td><td>449147</td><td>Kilograms</td><td>1082541</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Romania
+                                </td><td>332083198</td><td>Kilograms</td><td>418798887</td><td>Kilograms</td><td>326674721</td><td>Kilograms</td><td>179536792</td><td>Kilograms</td><td>152485542</td><td>Kilograms</td><td>249761089</td><td>Kilograms</td><td>235947431</td><td>Kilograms</td><td>200239953</td><td>Kilograms</td><td>166882571</td><td>Kilograms</td><td>172798827</td><td>Kilograms</td><td>272695745</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Senegal
+                                </td><td>4086087</td><td>Kilograms</td><td>5523366</td><td>Kilograms</td><td>5019852</td><td>Kilograms</td><td>61885997</td><td>Kilograms</td><td>35997405</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Peru
+                                </td><td>207693161</td><td>Kilograms</td><td>162393423</td><td>Kilograms</td><td>131099212</td><td>Kilograms</td><td>113281504</td><td>Kilograms</td><td>165133629</td><td>Kilograms</td><td>177126341</td><td>Kilograms</td><td>182347288</td><td>Kilograms</td><td>61717566</td><td>Kilograms</td><td>210790931</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Poland
+                                </td><td>574786519</td><td>Kilograms</td><td>550612047</td><td>Kilograms</td><td>565536495</td><td>Kilograms</td><td>369020504</td><td>Kilograms</td><td>304509466</td><td>Kilograms</td><td>571445902</td><td>Kilograms</td><td>309697620</td><td>Kilograms</td><td>299145741</td><td>Kilograms</td><td>279597216</td><td>Kilograms</td><td>263648106</td><td>Kilograms</td><td>384572349</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Malta
+                                </td><td>206368</td><td>Kilograms</td><td>185733</td><td>Kilograms</td><td>191092</td><td>Kilograms</td><td>91513</td><td>Kilograms</td><td>73027</td><td>Kilograms</td><td>129639</td><td>Kilograms</td><td>135131</td><td>Kilograms</td><td>291633</td><td>Kilograms</td><td>253394</td><td>Kilograms</td><td>229032</td><td>Kilograms</td><td>236145</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Mauritania
+                                </td><td>20108500</td><td>Kilograms</td><td>4254113</td><td>Kilograms</td><td>190534</td><td>Kilograms</td><td>5574927</td><td>Kilograms</td><td>1732843</td><td>Kilograms</td><td>165974</td><td>Kilograms</td><td>6303949</td><td>Kilograms</td><td>25338739</td><td>Kilograms</td><td>208689</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Mauritius
+                                </td><td>3476174</td><td>Kilograms</td><td>738550</td><td>Kilograms</td><td>624017</td><td>Kilograms</td><td>1365729</td><td>Kilograms</td><td>750148</td><td>Kilograms</td><td>1424587</td><td>Kilograms</td><td>1465386</td><td>Kilograms</td><td>1935095</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Morocco
+                                </td><td>41781614</td><td>Kilograms</td><td>17558222</td><td>Kilograms</td><td>24738707</td><td>Kilograms</td><td>110317739</td><td>Kilograms</td><td>134779536</td><td>Kilograms</td><td>18017440</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Namibia
+                                </td><td>30957084</td><td>Kilograms</td><td>3004423</td><td>Kilograms</td><td>2989956</td><td>Kilograms</td><td>8226235</td><td>Kilograms</td><td>14320635</td><td>Kilograms</td><td>7555943</td><td>Kilograms</td><td>23284752</td><td>Kilograms</td><td>3816091</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Netherlands
+                                </td><td>240066408</td><td>Kilograms</td><td>154373942</td><td>Kilograms</td><td>256000121</td><td>Kilograms</td><td>248267108</td><td>Kilograms</td><td>188184623</td><td>Kilograms</td><td>192348504</td><td>Kilograms</td><td>227467872</td><td>Kilograms</td><td>214881435</td><td>Kilograms</td><td>259962677</td><td>Kilograms</td><td>187034397</td><td>Kilograms</td><td>206982747</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Uganda
+                                </td><td>10323887</td><td>Kilograms</td><td>9803729</td><td>Kilograms</td><td>6564785</td><td>Kilograms</td><td>7807183</td><td>Kilograms</td><td>12488561</td><td>Kilograms</td><td>48841441</td><td>Kilograms</td><td>14568804</td><td>Kilograms</td><td>7763530</td><td>Kilograms</td><td>7482023</td><td>Kilograms</td><td>8861229</td><td>Kilograms</td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Ukraine
+                                </td><td>341146375</td><td>Kilogrammes</td><td>404159478</td><td>Kilogrammes</td><td>272913797</td><td>Kilogrammes</td><td>210270544</td><td>Kilogrammes</td><td>129730858</td><td>Kilogrammes</td><td>223105682</td><td>Kilogrammes</td><td>367492260</td><td>Kilogrammes</td><td>301864215</td><td>Kilogrammes</td><td>279237903</td><td>Kilogrammes</td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Slovakia
+                                </td><td>50791069</td><td>Kilograms</td><td>63642433</td><td>Kilograms</td><td>59901423</td><td>Kilograms</td><td>39403931</td><td>Kilograms</td><td>29746654</td><td>Kilograms</td><td>44580606</td><td>Kilograms</td><td>60557649</td><td>Kilograms</td><td>40488873</td><td>Kilograms</td><td>36391599</td><td>Kilograms</td><td>40936059</td><td>Kilograms</td><td>54925570</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Slovenia
+                                </td><td>39039592</td><td>Kilograms</td><td>63248533</td><td>Kilograms</td><td>71939288</td><td>Kilograms</td><td>27908940</td><td>Kilograms</td><td>37082199</td><td>Kilograms</td><td>96506037</td><td>Kilograms</td><td>15934800</td><td>Kilograms</td><td>51596271</td><td>Kilograms</td><td>23739477</td><td>Kilograms</td><td>36086046</td><td>Kilograms</td><td>44906531</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            India
+                                </td><td>1686337650</td><td>Kilograms</td><td>1167786763</td><td>Kilograms</td><td>1189763188</td><td>Kilograms</td><td>1149110727</td><td>Kilograms</td><td>1069990407</td><td>Kilograms</td><td>1272061365</td><td>Kilograms</td><td>2616781570</td><td>Kilograms</td><td>2612527884</td><td>Kilograms</td><td>3910282205</td><td>Kilograms</td><td>4159847671</td><td>Kilograms</td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Zimbabwe
+                                </td><td>36039261</td><td>Kilograms</td><td>14688480</td><td>Kilograms</td><td>42265973</td><td>Kilograms</td><td>29768680</td><td>Kilograms</td><td>36367794</td><td>Kilograms</td><td>27118287</td><td>Kilograms</td><td>38022727</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Sweden
+                                </td><td>138305778</td><td>Kilograms</td><td>114481234</td><td>Kilograms</td><td>152302634</td><td>Kilograms</td><td>83089157</td><td>Kilograms</td><td>147084723</td><td>Kilograms</td><td>135401652</td><td>Kilograms</td><td>121540370</td><td>Kilograms</td><td>139859236</td><td>Kilograms</td><td>98229344</td><td>Kilograms</td><td>125839313</td><td>Kilograms</td><td>144639470</td><td>Kilograms</td><td></td><td></td>
+		</tr><tr align="right" style="background-color:White;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Uruguay
+                                </td><td>47196766</td><td>Kilograms</td><td>29553583</td><td>Kilograms</td><td>30833284</td><td>Kilograms</td><td>138971614</td><td>Kilograms</td><td>91343850</td><td>Kilograms</td><td>119788263</td><td>Kilograms</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+		</tr><tr align="right" style="background-color:#F7F6F3;font-size:80%;">
+			<td align="left" style="width:30%;">
+                            Zambia
+                                </td><td>105429326</td><td>Kilograms</td><td>62439833</td><td>Kilograms</td><td>52968982</td><td>Kilograms</td><td>75335248</td><td>Kilograms</td><td>69996853</td><td>Kilograms</td><td>66062664</td><td>Kilograms</td><td>70532042</td><td>Kilograms</td><td>93188677</td><td>Kilograms</td><td>123119346</td><td>Kilograms</td><td>116705267</td><td>Kilograms</td><td></td><td></td><td></td><td></td>
 		</tr>
 	</table>
 </div></body></html>

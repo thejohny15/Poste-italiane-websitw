@@ -51,6 +51,17 @@
                 <h3 class="chart-title">Household Equity / Disposable Income, Mortgage Delinquency Rate, and Debt Service Ratio</h3>
                 <canvas id="equityStressChart"></canvas>
             </div>
+
+            <h2 class="section-title">Chart 4 — Inflation vs Naphtha Price</h2>
+            <div class="chart-container">
+                <h3 class="chart-title">US &amp; Euro Area Inflation (YoY %) and Naphtha Price (USD/ton)</h3>
+                <canvas id="inflationNaphthaChart"></canvas>
+            </div>
+            <div class="methodology-note" style="margin-top: 12px;">
+                <p>
+                    Naphtha matters for inflation because it is a key input into petrochemicals, especially plastics. That means a sustained rise in naphtha prices can raise costs far beyond the energy sector itself, through packaging, consumer goods and industrial materials. The effect is less visible than gasoline, but it is potentially very broad. In that sense, the Iran war is not only an oil shock; it is also a supply-chain shock for petrochemicals. Reports already indicate that Asian refiners and petrochemical producers are cutting runs and, in some cases, shutting units because of disrupted Middle Eastern feedstock supply. If this persists for months rather than weeks, the inflation impact could become more generalized.
+                </p>
+            </div>
         </main>
 
         <footer>
@@ -63,6 +74,7 @@
                     <li><strong>Unemployment Rate:</strong> <code>UNRATE</code>, plotted on a secondary axis.</li>
                     <li><strong>Wealth-effect chart:</strong> YoY growth for household equity, real disposable income (<code>DSPIC96</code>), and real personal consumption (<code>PCEC96</code>).</li>
                     <li><strong>Mortgage stress chart:</strong> mortgage delinquency (<code>DRSFRMACBS</code>) and debt service ratio (<code>TDSP</code>) versus household equity exposure.</li>
+                    <li><strong>Inflation &amp; naphtha chart:</strong> CPI YoY change for the US (<code>CPIAUCSL</code>) and Euro Area HICP (<code>CP0000EZ19M086NEST</code>), plus Naphtha price from TradingEconomics (symbol <code>MOB:COM</code>) with BusinessInsider and local CSV backfill, plotted as monthly averages.</li>
                 </ul>
             </div>
         </footer>

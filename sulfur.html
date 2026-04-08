@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sulfur — Gulf Export Destinations</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sulfur — Gulf Export Destinations</h1>
+            <p class="subtitle">Top importers of Gulf sulfur by dependence and by volume</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="energy_trade.html" class="nav-link">Energy Fuels Trade</a>
+                <a href="energy_europe.html" class="nav-link">Energy in Europe</a>
+                <a href="commodity_trade.html" class="nav-link">Commodity Trade</a>
+                <a href="sulfur.html" class="nav-link active">Sulfur</a>
+                <a href="urea.html" class="nav-link">Urea</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Top 5 by Dependence on Gulf Sulfur</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="gulfSulfurDependenceTitle" class="chart-title">Loading sulfur dependence data…</h3>
+                <canvas id="gulfSulfurDependenceChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadGulfSulfurDependenceBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download dependence graph (PNG)
+                </button>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Dependence filter:</strong> Only countries importing at least <code>1%</code> of world sulfur imports in the latest available year are included.
+            </div>
+
+            <h2 class="section-title">Latest Year Ranking by Dependence</h2>
+            <div class="chart-container" style="height: 380px;">
+                <h3 id="gulfSulfurDependenceRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="gulfSulfurDependenceRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+
+            <h2 class="section-title">Top 5 Sulfur Importers by Value of Imports from Gulf Suppliers</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="gulfSulfurVolumeTitle" class="chart-title">Loading sulfur volume data…</h3>
+                <canvas id="gulfSulfurVolumeChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadGulfSulfurVolumeBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download volume graph (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Latest Year Ranking by Volume</h2>
+            <div class="chart-container" style="height: 380px;">
+                <h3 id="gulfSulfurVolumeRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div style="margin-top: 10px; margin-bottom: 8px;">
+                    <button id="downloadGulfSulfurVolumeRankingBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                        Download volume ranking table (PNG)
+                    </button>
+                </div>
+                <div id="gulfSulfurVolumeRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+
+            <div class="methodology-note" style="margin-top: 14px;">
+                <strong>Scope:</strong> OEC sulfur data for HS4 <code>2503</code>, aggregated across GCC exporters: Bahrain, Kuwait, Oman, Qatar, Saudi Arabia, and United Arab Emirates. The dependence chart shows Gulf sulfur imports as a share of each importer's total sulfur imports and applies a minimum latest-year scale filter of <code>1%</code> of world sulfur imports. The volume chart shows absolute Gulf sulfur imports in USD, so larger economies are visible too.
+            </div>
+
+            <h2 class="section-title">Eurozone DAP Import Dependency</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="eurozoneDapTitle" class="chart-title">Loading Eurozone DAP import dependency…</h3>
+                <canvas id="eurozoneDapChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadEurozoneDapBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Eurozone DAP graph (PNG)
+                </button>
+            </div>
+            <div class="methodology-note" style="margin-top: 8px;">
+                <strong>Scope:</strong> Eurozone aggregate imports of DAP, HS6 <code>310530</code>, from suppliers outside the Eurozone only. The line values show each non-Eurozone supplier's share of total extra-Eurozone DAP imports.
+            </div>
+
+            <h2 class="section-title">Top 5 Eurozone Countries Importing DAP in Absolute Volume</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="eurozoneDapVolumeTitle" class="chart-title">Loading Eurozone DAP import volume…</h3>
+                <canvas id="eurozoneDapVolumeChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadEurozoneDapVolumeBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Eurozone DAP volume graph (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Top 3 Non-Eurozone Suppliers</h2>
+            <div class="chart-container" style="height: 380px;">
+                <h3 id="eurozoneDapPartnersTitle" class="chart-title">Latest available ranking</h3>
+                <div id="eurozoneDapPartnersTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="sulfur.js"></script>
+</body>
+</html>

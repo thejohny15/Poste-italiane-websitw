@@ -6,6 +6,7 @@
     <title>Oil Dual API Test</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
 </head>
 <body>
     <div class="container">
@@ -51,6 +52,25 @@
                 </p>
             </div>
 
+            <h2 class="section-title">US &amp; Euro Area Inflation (YoY) vs Naphtha Price (Monthly)</h2>
+            <div class="chart-container" style="height: 540px;">
+                <h3 id="inflationNaphthaTitle" class="chart-title">Loading monthly inflation + naphtha price...</h3>
+                <canvas id="inflationNaphthaChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadInflationNaphthaChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download inflation vs naphtha graph (PNG)
+                </button>
+            </div>
+            <div class="methodology-note" style="margin-top: 12px;">
+                <p>
+                    Naphtha matters for inflation because it is a key input into petrochemicals, especially plastics. That means a sustained rise in naphtha prices can raise costs far beyond the energy sector itself, through packaging, consumer goods and industrial materials. The effect is less visible than gasoline, but it is potentially very broad. In that sense, the Iran war is not only an oil shock; it is also a supply-chain shock for petrochemicals. Reports already indicate that Asian refiners and petrochemical producers are cutting runs and, in some cases, shutting units because of disrupted Middle Eastern feedstock supply. If this persists for months rather than weeks, the inflation impact could become more generalized.
+                </p>
+                <p>
+                    Naphtha price history combines TradingEconomics (recent) with BusinessInsider and local CSV backfill to extend the series further back.
+                </p>
+            </div>
+
             <h2 class="section-title">Top 5 Net Exporters Share of World Net Exports (Petroleum & Other Liquids, Annual)</h2>
             <div class="chart-container" style="height: 560px;">
                 <h3 id="oilTopExportersTitle" class="chart-title">Loading annual top net exporter shares...</h3>
@@ -73,6 +93,28 @@
                 </p>
             </div>
 
+            <h2 class="section-title">Top 5 Naphtha Exporters Share of World Exports (Annual)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="naphthaTopExportersTitle" class="chart-title">Loading annual top 5 naphtha exporters share...</h3>
+                <canvas id="naphthaTopExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadNaphthaTopExportersChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download naphtha exporters graph (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Top 5 Naphtha Importers Share of World Imports (Annual)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="naphthaTopImportersTitle" class="chart-title">Loading annual top 5 naphtha importers share...</h3>
+                <canvas id="naphthaTopImportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadNaphthaTopImportersChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download naphtha importers graph (PNG)
+                </button>
+            </div>
+
             <h2 class="section-title">Fertilizer Imports Share of World Imports (Annual, Top 6)</h2>
             <div class="chart-container" style="height: 560px;">
                 <h3 id="fertilizerImportsDualTitle" class="chart-title">Loading annual fertilizer imports share (top 6 importers)...</h3>
@@ -84,9 +126,9 @@
                 </button>
             </div>
 
-            <h2 class="section-title">Fertilizer Imports (Monthly Value, Top 6)</h2>
+            <h2 class="section-title">Fertilizer Imports (Monthly Quantity, Top 6)</h2>
             <div class="chart-container" style="height: 560px;">
-                <h3 id="fertilizerImportsMonthlyTitle" class="chart-title">Loading monthly fertilizer imports value (top 6 importers)...</h3>
+                <h3 id="fertilizerImportsMonthlyTitle" class="chart-title">Loading monthly fertilizer imports quantity (top 6 importers)...</h3>
                 <canvas id="fertilizerImportsMonthlyChart"></canvas>
             </div>
             <div style="margin-top: 10px; margin-bottom: 8px;">
@@ -94,9 +136,38 @@
                     Download fertilizer monthly imports graph (PNG)
                 </button>
             </div>
+
+            <h2 class="section-title">US vs Europe Fertilizer Imports (Monthly Quantity)</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="fertilizerUsEuropeImportsMonthlyTitle" class="chart-title">Loading monthly fertilizer imports quantity for US vs Europe...</h3>
+                <canvas id="fertilizerUsEuropeImportsMonthlyChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadFertilizerUsEuropeImportsMonthlyChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download US vs Europe monthly imports graph (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Fertilizer Trade Balance (Monthly Quantity, Top 5)</h2>
+            <div style="margin-top: 8px; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <button id="loadFertilizerTradeBalanceFilesBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Load trade-balance files (.xls)
+                </button>
+                <input id="fertilizerTradeBalanceFilesInput" type="file" accept=".xls,.html,.htm" multiple style="display: none;" />
+                <span id="fertilizerTradeBalanceFilesStatus" style="font-size: 13px; color: #374151;">If browser blocks auto-loading, click this and select importer/exporter monthly files.</span>
+            </div>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="fertilizerTradeBalanceMonthlyTitle" class="chart-title">Loading monthly fertilizer trade balance quantity (top 5 countries)...</h3>
+                <canvas id="fertilizerTradeBalanceMonthlyChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadFertilizerTradeBalanceMonthlyChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download fertilizer monthly trade balance graph (PNG)
+                </button>
+            </div>
         </main>
     </div>
 
-    <script src="oil_dual_api.js"></script>
+    <script src="oil_dual_api.js?v=20260316-15"></script>
 </body>
 </html>

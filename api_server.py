@@ -15,6 +15,9 @@ import json
 import base64
 import zlib
 import os
+import io
+import csv
+import zipfile
 from io import StringIO
 import time
 from typing import Any
@@ -38,6 +41,8 @@ EUROSTAT_COUNTRY_FUEL_CACHE: dict[str, dict[str, Any]] = {}
 EUROSTAT_COUNTRY_FUEL_CACHE_TTL_SECONDS = 3600
 EUROZONE_OIL_GAS_SPLIT_CACHE: dict[str, Any] = {}
 EUROZONE_OIL_GAS_SPLIT_CACHE_TTL_SECONDS = 3600
+EUROSTAT_OIL_PRODUCTS_CACHE: dict[str, dict[str, Any]] = {}
+EUROSTAT_OIL_PRODUCTS_CACHE_TTL_SECONDS = 6 * 3600
 EMBER_EUROPE_ELECTRICITY_SHARE_CACHE: dict[str, Any] = {}
 EMBER_EUROPE_ELECTRICITY_SHARE_CACHE_TTL_SECONDS = 12 * 3600
 EMBER_MONTHLY_DF_CACHE: dict[str, Any] = {
@@ -50,6 +55,12 @@ TE_MARKETS_BASE_URL = 'https://d3ii0wo49og5mi.cloudfront.net/markets'
 TE_CHARTS_TOKEN = '20240229:nazare'
 TE_CHARTS_OBFUSCATION_KEY = 'tradingeconomics-charts-core-api-key'
 TE_EU_GAS_SYMBOL = 'ngeu:com'
+TE_NAPHTHA_SYMBOL = 'MOB:COM'
+BI_NAPHTHA_INSTRUMENT_IDENTIFIER = '1965459'
+BI_NAPHTHA_INSTRUMENT_TYPE = 'Valor'
+BI_NAPHTHA_MARKET = 'NMN'
+LOCAL_NAPHTHA_CSV = Path(__file__).resolve().parent / 'Naphthapreis (European)_02_26_26-10_19_12.csv'
+LOCAL_NAPHTHA_CACHE: dict[str, Any] = {}
 EIA_INTERNATIONAL_BASE_URL = 'https://api.eia.gov/v2/international/data/'
 EIA_API_KEY_DEFAULT = os.getenv('EIA_API_KEY', 'DEMO_KEY')
 EIA_CONSUMPTION_API_KEY_DEFAULT = os.getenv('EIA_CONSUMPTION_API_KEY', EIA_API_KEY_DEFAULT)
@@ -72,14 +83,31 @@ EIA_WORLD_EXPORTERS_SHARE_CACHE_TTL_SECONDS = 6 * 3600
 EIA_DISK_CACHE_DIR = Path(__file__).resolve().parent / '.cache' / 'eia'
 EIA_DISK_CACHE_MAX_AGE_SECONDS = 7 * 24 * 3600
 COMTRADE_BASE_URL = 'https://comtradeapi.worldbank.org/data/v1/get/C/A/HS'
+COMTRADE_COOLDOWN_SECONDS = 15 * 60
+COMTRADE_LOG_THROTTLE_SECONDS = 60
+COMTRADE_OUTAGE_STATE: dict[str, Any] = {
+    'cooldown_until': 0.0,
+    'last_log_at': 0.0,
+    'last_reason': '',
+}
 
 EUROZONE_MEMBER_CODES = {
     'AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'EL', 'IE',
     'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PT', 'SK', 'SI', 'ES'
 }
+EUROZONE_MEMBER_NAMES = {
+    'Austria', 'Belgium', 'Croatia', 'Cyprus', 'Estonia', 'Finland',
+    'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Latvia',
+    'Lithuania', 'Luxembourg', 'Malta', 'Netherlands', 'Portugal',
+    'Slovakia', 'Slovenia', 'Spain'
+}
 EUROZONE_PLUS_POLAND_CODES = EUROZONE_MEMBER_CODES | {'PL'}
 EUROZONE_AGG_GEO = 'EZ_AGG'
 EUROZONE_AGG_LABEL = 'Eurozone (aggregate)'
+HORMUZ_SUPPLIER_NAMES = {
+    'Oman', 'United Arab Emirates', 'Qatar', 'Bahrain',
+    'Kuwait', 'Saudi Arabia', 'Iraq', 'Iran'
+}
 
 
 def append_unweighted_aggregate_row(rows, metric_keys, aggregate_geo_codes=None):
@@ -348,6 +376,159 @@ def fetch_tradingeconomics_market_daily_series(symbol=TE_EU_GAS_SYMBOL, span='10
             continue
 
     return daily
+
+
+def _format_bi_date(dt: datetime) -> str:
+    month = dt.strftime('%b')
+    return f"{month}. {dt.strftime('%d %Y')}"
+
+
+def fetch_businessinsider_naphtha_daily_series(start_date: str, end_date: str):
+    """Fetch daily Naphtha prices from BusinessInsider historical price endpoint."""
+    try:
+        start_dt = pd.to_datetime(start_date, errors='coerce')
+        end_dt = pd.to_datetime(end_date, errors='coerce')
+    except Exception:
+        return []
+
+    if pd.isna(start_dt) or pd.isna(end_dt):
+        return []
+
+    if end_dt < start_dt:
+        return []
+
+    base_url = 'https://markets.businessinsider.com/ajax'
+    out = []
+
+    for year in range(int(start_dt.year), int(end_dt.year) + 1):
+        year_start = datetime(year, 1, 1)
+        year_end = datetime(year, 12, 31)
+        if year == start_dt.year:
+            year_start = start_dt.to_pydatetime()
+        if year == end_dt.year:
+            year_end = end_dt.to_pydatetime()
+
+        start_str = _format_bi_date(year_start)
+        end_str = _format_bi_date(year_end)
+
+        url = (
+            f"{base_url}/{BI_NAPHTHA_INSTRUMENT_TYPE}_HistoricPriceList/"
+            f"{BI_NAPHTHA_INSTRUMENT_IDENTIFIER}/{requests.utils.quote(start_str)}_"
+            f"{requests.utils.quote(end_str)}/{BI_NAPHTHA_MARKET}"
+        )
+
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            rows = response.json()
+        except Exception as e:
+            print(f"BusinessInsider naphtha fetch failed (year={year}): {e}")
+            continue
+
+        if not isinstance(rows, list):
+            continue
+
+        for row in rows:
+            try:
+                date_str = row.get('Date')
+                close_val = row.get('Close')
+                if not date_str or close_val is None:
+                    continue
+                dt = datetime.strptime(str(date_str), '%m/%d/%y')
+                out.append((dt.strftime('%Y-%m-%d'), float(close_val)))
+            except Exception:
+                continue
+
+    return out
+
+
+def fetch_local_naphtha_daily_series():
+    """Load locally provided Naphtha history CSV (BusinessInsider export) if available."""
+    cache_key = str(LOCAL_NAPHTHA_CSV)
+    cached = LOCAL_NAPHTHA_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    if not LOCAL_NAPHTHA_CSV.exists():
+        LOCAL_NAPHTHA_CACHE[cache_key] = []
+        return []
+
+    try:
+        df = pd.read_csv(LOCAL_NAPHTHA_CSV)
+    except Exception as e:
+        print(f"Local naphtha CSV read failed: {e}")
+        LOCAL_NAPHTHA_CACHE[cache_key] = []
+        return []
+
+    if 'Date' not in df.columns or 'Close' not in df.columns:
+        LOCAL_NAPHTHA_CACHE[cache_key] = []
+        return []
+
+    df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y', errors='coerce')
+    df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+    df = df.dropna(subset=['Date', 'Close'])
+
+    series = []
+    for row in df.itertuples(index=False):
+        dt = getattr(row, 'Date')
+        close_val = getattr(row, 'Close')
+        if pd.isna(dt) or pd.isna(close_val):
+            continue
+        series.append((dt.strftime('%Y-%m-%d'), float(close_val)))
+
+    LOCAL_NAPHTHA_CACHE[cache_key] = series
+    return series
+
+
+def fetch_naphtha_daily_series(start_date: str, end_date: str):
+    """Return merged daily Naphtha series (TradingEconomics + BusinessInsider backfill)."""
+    merged: dict[str, float] = {}
+
+    te_daily = []
+    try:
+        te_daily = fetch_tradingeconomics_market_daily_series(
+            symbol=TE_NAPHTHA_SYMBOL,
+            span='10y',
+            interval='1d'
+        )
+    except Exception as e:
+        print(f"TradingEconomics naphtha fetch failed: {e}")
+
+    for date_str, value in te_daily:
+        merged[date_str] = value
+
+    try:
+        start_dt = pd.to_datetime(start_date, errors='coerce')
+        end_dt = pd.to_datetime(end_date, errors='coerce')
+        if pd.isna(start_dt) or pd.isna(end_dt):
+            raise ValueError('Invalid start/end date')
+
+        bi_end_dt = end_dt
+        if te_daily:
+            earliest_te = min(pd.to_datetime(d, errors='coerce') for d, _ in te_daily)
+            if not pd.isna(earliest_te) and earliest_te > start_dt:
+                bi_end_dt = earliest_te - pd.Timedelta(days=1)
+
+        if bi_end_dt >= start_dt:
+            bi_daily = fetch_businessinsider_naphtha_daily_series(
+                start_dt.strftime('%Y-%m-%d'),
+                bi_end_dt.strftime('%Y-%m-%d'),
+            )
+            for date_str, value in bi_daily:
+                if date_str not in merged:
+                    merged[date_str] = value
+    except Exception as e:
+        print(f"BusinessInsider naphtha backfill failed: {e}")
+
+    try:
+        local_daily = fetch_local_naphtha_daily_series()
+        for date_str, value in local_daily:
+            if date_str not in merged:
+                merged[date_str] = value
+    except Exception as e:
+        print(f"Local naphtha CSV backfill failed: {e}")
+
+    return sorted(merged.items())
 
 
 def get_ember_monthly_long_df(force_refresh=False):
@@ -1920,6 +2101,66 @@ def calculate_monthly_change(data):
     
     return changes
 
+def calculate_year_over_year_change(data):
+    """Calculate year-over-year percentage change using same month last year."""
+    if not data or len(data) < 13:
+        return []
+
+    value_map = {d: v for d, v in data}
+    dates = sorted(value_map.keys())
+    changes = []
+    for date_key in dates:
+        current = value_map.get(date_key)
+        if current is None:
+            continue
+        prior_date_key = (pd.to_datetime(date_key) - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
+        prior = value_map.get(prior_date_key)
+        if prior is None or prior == 0:
+            continue
+        pct_change = ((current - prior) / prior) * 100
+        changes.append((date_key, round(pct_change, 2)))
+
+    return changes
+
+def build_inflation_naphtha_series(start_date, end_date):
+    """Return monthly US CPI + Euro Area HICP inflation (MoM) and Naphtha price (monthly avg)."""
+    us_cpi = fetch_fred_data('CPIAUCSL', start_date, end_date, FRED_API_KEY)
+    euro_cpi = fetch_fred_data('CP0000EZ19M086NEST', start_date, end_date, FRED_API_KEY)
+    us_inflation = calculate_year_over_year_change(us_cpi)
+    euro_inflation = calculate_year_over_year_change(euro_cpi)
+
+    def to_month_key(date_str):
+        return str(date_str)[:7]
+
+    us_inflation_map = {to_month_key(d): v for d, v in us_inflation}
+    euro_inflation_map = {to_month_key(d): v for d, v in euro_inflation}
+
+    naphtha_monthly_map = {}
+    try:
+        naphtha_daily = fetch_naphtha_daily_series(start_date, end_date)
+        naphtha_monthly_map = monthly_average_from_daily(naphtha_daily)
+    except Exception as e:
+        print(f"Warning: naphtha price fetch failed: {e}")
+
+    inflation_months = sorted(set(us_inflation_map.keys()) | set(euro_inflation_map.keys()) | set(naphtha_monthly_map.keys()))
+    inflation_naphtha = []
+    for month_key in inflation_months:
+        us_val = us_inflation_map.get(month_key)
+        eu_val = euro_inflation_map.get(month_key)
+        naphtha_val = naphtha_monthly_map.get(month_key)
+
+        if us_val is None and eu_val is None and naphtha_val is None:
+            continue
+
+        inflation_naphtha.append({
+            'date': f"{month_key}-01",
+            'us_inflation_yoy': (round(us_val, 2) if us_val is not None else None),
+            'eu_inflation_yoy': (round(eu_val, 2) if eu_val is not None else None),
+            'naphtha_price': (round(naphtha_val, 2) if naphtha_val is not None else None),
+        })
+
+    return inflation_naphtha
+
 def fetch_oil_data(start_date, end_date):
     """Fetch WTI Crude Oil prices from Yahoo Finance"""
     try:
@@ -2530,14 +2771,31 @@ def get_household_equity_dashboard():
                 'debt_service_ratio': (round(dsr, 2) if dsr is not None else None),
             })
 
+        inflation_naphtha = build_inflation_naphtha_series(start_date, end_date)
+
         return jsonify({
             'series': series,
             'wealth_effect': wealth_effect,
             'exposure_vs_stress': exposure_vs_stress,
+            'inflation_naphtha': inflation_naphtha,
         })
 
     except Exception as e:
         print(f"Error in household-equity-dashboard endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/inflation-naphtha', methods=['GET'])
+def get_inflation_naphtha():
+    """Return monthly US + Euro Area inflation (MoM) and Naphtha price series."""
+    try:
+        start_date = request.args.get('start_date', '2006-01-01')
+        end_date = request.args.get('end_date', datetime.utcnow().strftime('%Y-%m-%d'))
+        inflation_naphtha = build_inflation_naphtha_series(start_date, end_date)
+        return jsonify({'inflation_naphtha': inflation_naphtha})
+    except Exception as e:
+        print(f"Error in inflation-naphtha endpoint: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -4436,7 +4694,55 @@ def extract_comtrade_trade_value(row):
     return None
 
 
+def _comtrade_is_dns_or_resolution_error(error):
+    message = str(error or '').lower()
+    signals = (
+        'nodename nor servname provided',
+        'name resolution',
+        'failed to establish a new connection',
+        'temporary failure in name resolution',
+        'failed to resolve',
+    )
+    return any(signal in message for signal in signals)
+
+
+def _comtrade_log_throttled(message):
+    now_ts = time.time()
+    last_log_at = float(COMTRADE_OUTAGE_STATE.get('last_log_at') or 0.0)
+    if (now_ts - last_log_at) >= COMTRADE_LOG_THROTTLE_SECONDS:
+        print(message)
+        COMTRADE_OUTAGE_STATE['last_log_at'] = now_ts
+
+
+def _comtrade_note_failure(error):
+    if not _comtrade_is_dns_or_resolution_error(error):
+        return
+    now_ts = time.time()
+    COMTRADE_OUTAGE_STATE['cooldown_until'] = now_ts + COMTRADE_COOLDOWN_SECONDS
+    COMTRADE_OUTAGE_STATE['last_reason'] = str(error)
+    _comtrade_log_throttled(
+        'Comtrade DNS/network failure detected. Entering cooldown to avoid repeated retries/log spam.'
+    )
+
+
+def _comtrade_is_in_cooldown():
+    now_ts = time.time()
+    cooldown_until = float(COMTRADE_OUTAGE_STATE.get('cooldown_until') or 0.0)
+    return now_ts < cooldown_until
+
+
+def _comtrade_cooldown_error():
+    now_ts = time.time()
+    cooldown_until = float(COMTRADE_OUTAGE_STATE.get('cooldown_until') or 0.0)
+    remaining = max(0, int(cooldown_until - now_ts))
+    reason = str(COMTRADE_OUTAGE_STATE.get('last_reason') or 'network/DNS resolution issue')
+    return RuntimeError(f'Comtrade temporarily unavailable ({reason}). Cooldown {remaining}s.')
+
+
 def fetch_comtrade_hs_exports_value(year, reporter_code, commodity_code='31'):
+    if _comtrade_is_in_cooldown():
+        raise _comtrade_cooldown_error()
+
     params = {
         'reporterCode': str(reporter_code),
         'partnerCode': '0',
@@ -4456,9 +4762,12 @@ def fetch_comtrade_hs_exports_value(year, reporter_code, commodity_code='31'):
             break
         except Exception as e:
             last_error = e
-            print(
+            _comtrade_note_failure(e)
+            _comtrade_log_throttled(
                 f"Comtrade fetch failed (attempt {attempt}/3, reporter={reporter_code}, year={year}, cmd={commodity_code}): {e}"
             )
+            if _comtrade_is_in_cooldown():
+                break
             if attempt < 3:
                 time.sleep(1.2 * attempt)
 
@@ -4487,14 +4796,531 @@ def fetch_comtrade_hs_world_exports_value(year, commodity_code='31'):
     try:
         return fetch_comtrade_hs_exports_value(year=year, reporter_code='all', commodity_code=commodity_code), 'all_reporters'
     except Exception as all_error:
-        print(f"Comtrade world fetch via reporter=all failed for year={year}: {all_error}")
+        _comtrade_log_throttled(f"Comtrade world fetch via reporter=all failed for year={year}: {all_error}")
 
     try:
         return fetch_comtrade_hs_exports_value(year=year, reporter_code='0', commodity_code=commodity_code), 'reporter_0'
     except Exception as code0_error:
-        print(f"Comtrade world fetch via reporter=0 failed for year={year}: {code0_error}")
+        _comtrade_log_throttled(f"Comtrade world fetch via reporter=0 failed for year={year}: {code0_error}")
 
     return None, 'fallback_selected_sum'
+
+
+def extract_comtrade_reporter_code(row):
+    if not isinstance(row, dict):
+        return None
+
+    for key in (
+        'reporterCode', 'ReporterCode', 'reportercode',
+        'rtCode', 'rt_code', 'rtcode',
+    ):
+        value = row.get(key)
+        if value in (None, '', '.'):  # noqa: PLC1901
+            continue
+        code = str(value).strip()
+        if code:
+            return code
+
+    return None
+
+
+def extract_comtrade_reporter_name(row):
+    if not isinstance(row, dict):
+        return None
+
+    for key in (
+        'reporterDesc', 'ReporterDesc', 'reporterdesc',
+        'reporter', 'Reporter',
+        'rtTitle', 'rt_title', 'rptTitle',
+        'reporterName', 'ReporterName',
+    ):
+        value = row.get(key)
+        if value in (None, '', '.'):  # noqa: PLC1901
+            continue
+        name = str(value).strip()
+        if name:
+            return name
+
+    return None
+
+
+def fetch_comtrade_hs_exports_breakdown(year, commodity_code='271012'):
+    if _comtrade_is_in_cooldown():
+        raise _comtrade_cooldown_error()
+
+    params = {
+        'reporterCode': 'all',
+        'partnerCode': '0',
+        'flowCode': 'X',
+        'cmdCode': str(commodity_code),
+        'period': str(int(year)),
+        'format': 'json',
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(COMTRADE_BASE_URL, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            _comtrade_note_failure(e)
+            _comtrade_log_throttled(
+                f"Comtrade breakdown fetch failed (attempt {attempt}/3, year={year}, cmd={commodity_code}): {e}"
+            )
+            if _comtrade_is_in_cooldown():
+                break
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(
+            f"Comtrade breakdown request failed for year={year}, cmd={commodity_code}: {last_error}"
+        )
+
+    rows = extract_comtrade_rows(payload)
+    if not rows:
+        return []
+
+    by_reporter: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        value = extract_comtrade_trade_value(row)
+        if value is None or not np.isfinite(float(value)):
+            continue
+
+        code = extract_comtrade_reporter_code(row)
+        name = extract_comtrade_reporter_name(row)
+        if not code and not name:
+            continue
+
+        code_norm = str(code or '').strip()
+        name_norm = str(name or '').strip()
+        name_key = re.sub(r'[^a-z0-9]+', '', name_norm.lower())
+
+        if code_norm in {'0', 'all'}:
+            continue
+        if name_key in {'world', 'worldtotal'} or 'world' in name_key:
+            continue
+
+        reporter_key = code_norm or name_norm.upper()
+        if reporter_key not in by_reporter:
+            by_reporter[reporter_key] = {
+                'reporter_code': code_norm or reporter_key,
+                'reporter_name': name_norm or reporter_key,
+                'value_usd': 0.0,
+            }
+
+        by_reporter[reporter_key]['value_usd'] += float(value)
+
+    out = list(by_reporter.values())
+    out.sort(key=lambda item: item.get('value_usd', 0.0), reverse=True)
+    return out
+
+
+def fetch_comtrade_hs_imports_breakdown(year, commodity_code='271012'):
+    if _comtrade_is_in_cooldown():
+        raise _comtrade_cooldown_error()
+
+    params = {
+        'reporterCode': 'all',
+        'partnerCode': '0',
+        'flowCode': 'M',
+        'cmdCode': str(commodity_code),
+        'period': str(int(year)),
+        'format': 'json',
+    }
+
+    payload = None
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(COMTRADE_BASE_URL, params=params, timeout=45)
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except Exception as e:
+            last_error = e
+            _comtrade_note_failure(e)
+            _comtrade_log_throttled(
+                f"Comtrade imports breakdown fetch failed (attempt {attempt}/3, year={year}, cmd={commodity_code}): {e}"
+            )
+            if _comtrade_is_in_cooldown():
+                break
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+
+    if payload is None:
+        raise RuntimeError(
+            f"Comtrade imports breakdown request failed for year={year}, cmd={commodity_code}: {last_error}"
+        )
+
+    rows = extract_comtrade_rows(payload)
+    if not rows:
+        return []
+
+    by_reporter: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        value = extract_comtrade_trade_value(row)
+        if value is None or not np.isfinite(float(value)):
+            continue
+
+        code = extract_comtrade_reporter_code(row)
+        name = extract_comtrade_reporter_name(row)
+        if not code and not name:
+            continue
+
+        code_norm = str(code or '').strip()
+        name_norm = str(name or '').strip()
+        name_key = re.sub(r'[^a-z0-9]+', '', name_norm.lower())
+
+        if code_norm in {'0', 'all'}:
+            continue
+        if name_key in {'world', 'worldtotal'} or 'world' in name_key:
+            continue
+
+        reporter_key = code_norm or name_norm.upper()
+        if reporter_key not in by_reporter:
+            by_reporter[reporter_key] = {
+                'reporter_code': code_norm or reporter_key,
+                'reporter_name': name_norm or reporter_key,
+                'value_usd': 0.0,
+            }
+
+        by_reporter[reporter_key]['value_usd'] += float(value)
+
+    out = list(by_reporter.values())
+    out.sort(key=lambda item: item.get('value_usd', 0.0), reverse=True)
+    return out
+
+
+def fetch_naphtha_top_exporters_share_world(start_year=2018, end_year=None, top_n=5, commodity_code='271012'):
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    top_n = max(1, int(top_n))
+    years = list(range(int(start_year), int(end_year) + 1))
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    for year in years:
+        try:
+            breakdown = fetch_comtrade_hs_exports_breakdown(year=year, commodity_code=commodity_code)
+        except Exception:
+            breakdown = []
+
+        year_values: dict[str, float] = {}
+        year_names: dict[str, str] = {}
+        for item in breakdown:
+            code = str(item.get('reporter_code') or '').strip()
+            name = str(item.get('reporter_name') or '').strip()
+            value = item.get('value_usd')
+            if not code or not name or value is None:
+                continue
+            if not np.isfinite(float(value)) or float(value) <= 0:
+                continue
+            year_values[code] = float(value)
+            year_names[code] = name
+
+        if year_values:
+            by_year_values[int(year)] = year_values
+            by_year_names[int(year)] = year_names
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'UN Comtrade API',
+            'dataset': 'HS annual merchandise trade',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Naphtha',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"naphtha_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'reporter_code': code,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    return {
+        'source': 'UN Comtrade API',
+        'dataset': 'HS annual merchandise trade',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Naphtha',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+    }
+
+
+def fetch_naphtha_top_importers_share_world(start_year=2018, end_year=None, top_n=5, commodity_code='271012'):
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    top_n = max(1, int(top_n))
+    years = list(range(int(start_year), int(end_year) + 1))
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    for year in years:
+        try:
+            breakdown = fetch_comtrade_hs_imports_breakdown(year=year, commodity_code=commodity_code)
+        except Exception:
+            breakdown = []
+
+        year_values: dict[str, float] = {}
+        year_names: dict[str, str] = {}
+        for item in breakdown:
+            code = str(item.get('reporter_code') or '').strip()
+            name = str(item.get('reporter_name') or '').strip()
+            value = item.get('value_usd')
+            if not code or not name or value is None:
+                continue
+            if not np.isfinite(float(value)) or float(value) <= 0:
+                continue
+            year_values[code] = float(value)
+            year_names[code] = name
+
+        if year_values:
+            by_year_values[int(year)] = year_values
+            by_year_names[int(year)] = year_names
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'UN Comtrade API',
+            'dataset': 'HS annual merchandise trade',
+            'flow': 'Imports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Naphtha',
+            'metric': 'share_of_world_imports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"naphtha_importer_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'reporter_code': code,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_imports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_imports_usd': world_imports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_imports is None or world_imports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_imports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    return {
+        'source': 'UN Comtrade API',
+        'dataset': 'HS annual merchandise trade',
+        'flow': 'Imports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Naphtha',
+        'metric': 'share_of_world_imports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+    }
+
+
+def fetch_petrochem_top_exporters_share_world(start_year=2018, end_year=None, top_n=5, commodity_code='29'):
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    top_n = max(1, int(top_n))
+    years = list(range(int(start_year), int(end_year) + 1))
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    for year in years:
+        try:
+            breakdown = fetch_comtrade_hs_exports_breakdown(year=year, commodity_code=commodity_code)
+        except Exception:
+            breakdown = []
+
+        year_values: dict[str, float] = {}
+        year_names: dict[str, str] = {}
+        for item in breakdown:
+            code = str(item.get('reporter_code') or '').strip()
+            name = str(item.get('reporter_name') or '').strip()
+            value = item.get('value_usd')
+            if not code or not name or value is None:
+                continue
+            if not np.isfinite(float(value)) or float(value) <= 0:
+                continue
+            year_values[code] = float(value)
+            year_names[code] = name
+
+        if year_values:
+            by_year_values[int(year)] = year_values
+            by_year_names[int(year)] = year_names
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'UN Comtrade API',
+            'dataset': 'HS annual merchandise trade',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': f'Petrochemicals (HS {commodity_code})',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"petrochem_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'reporter_code': code,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    return {
+        'source': 'UN Comtrade API',
+        'dataset': 'HS annual merchandise trade',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': f'Petrochemicals (HS {commodity_code})',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+    }
 
 
 def fetch_fertilizer_exports_share_world(start_year=2018, end_year=None):
@@ -4522,8 +5348,7 @@ def fetch_fertilizer_exports_share_world(start_year=2018, end_year=None):
                     reporter_code=spec['reporter_code'],
                     commodity_code='31',
                 )
-            except Exception as e:
-                print(f"Fertilizer country fetch failed for {spec['code']} ({year}): {e}")
+            except Exception:
                 value = None
             values_by_key[spec['series_key'].replace('_pct', '_usd')] = value
 
@@ -4572,6 +5397,2233 @@ def fetch_fertilizer_exports_share_world(start_year=2018, end_year=None):
     }
 
 
+def fetch_aluminum_top_exporters_and_rankings(start_year=2015, end_year=None, top_n=5, commodity_code='7601'):
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    top_n = max(1, int(top_n))
+    years = list(range(int(start_year), int(end_year) + 1))
+
+    focus_countries = [
+        {'code': '784', 'name': 'United Arab Emirates'},
+        {'code': '048', 'name': 'Bahrain'},
+        {'code': '634', 'name': 'Qatar'},
+        {'code': '682', 'name': 'Saudi Arabia'},
+        {'code': '512', 'name': 'Oman'},
+    ]
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+    rankings_by_year: dict[int, list[dict[str, Any]]] = {}
+
+    for year in years:
+        try:
+            breakdown = fetch_comtrade_hs_exports_breakdown(year=year, commodity_code=commodity_code)
+        except Exception:
+            breakdown = []
+
+        year_values: dict[str, float] = {}
+        year_names: dict[str, str] = {}
+        ranked_list = []
+        for item in breakdown:
+            code = str(item.get('reporter_code') or '').strip()
+            name = str(item.get('reporter_name') or '').strip()
+            value = item.get('value_usd')
+            if not code or not name or value is None:
+                continue
+            if not np.isfinite(float(value)) or float(value) <= 0:
+                continue
+            year_values[code] = float(value)
+            year_names[code] = name
+            ranked_list.append({'code': code, 'name': name, 'value_usd': float(value)})
+
+        ranked_list.sort(key=lambda item: item['value_usd'], reverse=True)
+        if ranked_list:
+            rankings_by_year[int(year)] = ranked_list
+            by_year_values[int(year)] = year_values
+            by_year_names[int(year)] = year_names
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'UN Comtrade API',
+            'dataset': 'HS annual merchandise trade',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Aluminium, unwrought',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+            'focus_countries': focus_countries,
+            'rankings': {},
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"aluminum_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'reporter_code': code,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    focus_rankings = {}
+    for year in available_years:
+        ranked = rankings_by_year.get(year, [])
+        rank_map = {item['code']: idx + 1 for idx, item in enumerate(ranked)}
+        value_map = {item['code']: item['value_usd'] for item in ranked}
+        year_focus = []
+        world_exports = float(sum(value_map.values())) if value_map else None
+        for focus in focus_countries:
+            code = focus['code']
+            rank = rank_map.get(code)
+            value = value_map.get(code)
+            share = None
+            if value is not None and world_exports and world_exports > 0:
+                share = (float(value) / float(world_exports)) * 100.0
+            year_focus.append({
+                'code': code,
+                'name': focus['name'],
+                'rank': rank,
+                'value_usd': value,
+                'share_pct': share,
+            })
+        focus_rankings[int(year)] = year_focus
+
+    latest_rankings = []
+    for focus in focus_countries:
+        name = focus['name']
+        latest_year = None
+        for year in reversed(available_years):
+            if name in by_year_values.get(year, {}):
+                latest_year = year
+                break
+        if latest_year is None:
+            latest_rankings.append({
+                'code': None,
+                'name': name,
+                'rank': None,
+                'value': None,
+                'year': None,
+            })
+            continue
+        ranked = sorted(
+            [{'code': code, 'value': val} for code, val in by_year_values.get(latest_year, {}).items()],
+            key=lambda item: item['value'],
+            reverse=True,
+        )
+        rank_map = {item['code']: idx + 1 for idx, item in enumerate(ranked)}
+        value = by_year_values.get(latest_year, {}).get(name)
+        latest_rankings.append({
+            'code': name,
+            'name': name,
+            'rank': rank_map.get(name),
+            'value': value,
+            'year': latest_year,
+        })
+
+    return {
+        'source': 'UN Comtrade API',
+        'dataset': 'HS annual merchandise trade',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Aluminium, unwrought',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+        'focus_countries': focus_countries,
+        'rankings': focus_rankings,
+        'latest_rankings': latest_rankings,
+    }
+
+
+def fetch_oec_aluminum_top_exporters_and_rankings(start_year=2015, end_year=None, top_n=5, commodity_code='7601'):
+    """Fetch top exporters for aluminium from OEC API (HS4)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    focus_countries = [
+        {'name': 'United Arab Emirates'},
+        {'name': 'Bahrain'},
+        {'name': 'Qatar'},
+        {'name': 'Saudi Arabia'},
+        {'name': 'Oman'},
+    ]
+
+    cubes = ['trade_i_baci_a_12']
+    records = []
+    last_error = None
+
+    for cube in cubes:
+        try:
+            params = {
+                'cube': cube,
+                'drilldowns': 'Year,Exporter Country',
+                'measures': 'Trade Value',
+                'include': f'HS4 Official:{commodity_code};Year:{year_list}',
+                'limit': '20000,0',
+            }
+            resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=40)
+            resp.raise_for_status()
+            payload = resp.json()
+            data = payload.get('data') if isinstance(payload, dict) else payload
+            if isinstance(data, list) and data:
+                records = data
+                break
+        except Exception as e:
+            last_error = e
+            print(f"OEC aluminum fetch failed (cube={cube}): {e}")
+
+    if not records:
+        raise RuntimeError(f"OEC aluminum fetch failed: {last_error}")
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+    rankings_by_year: dict[int, list[dict[str, Any]]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        name = get_field(row, 'Exporter Country')
+        code = get_field(row, 'Exporter Country ID')
+        value = get_field(row, 'Trade Value')
+        if year is None or name is None or value is None:
+            continue
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+
+        code_norm = str(code or name).strip().lower()
+        by_year_values.setdefault(year_int, {})[code_norm] = (
+            by_year_values.get(year_int, {}).get(code_norm, 0.0) + value_f
+        )
+        by_year_names.setdefault(year_int, {})[code_norm] = str(name)
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS4)',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Aluminium, unwrought',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+            'focus_countries': focus_countries,
+            'rankings': {},
+            'latest_rankings': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"aluminum_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    focus_rankings = {}
+    for year in available_years:
+        ranked = sorted(
+            [{'code': code, 'value_usd': val} for code, val in by_year_values.get(year, {}).items()],
+            key=lambda item: item['value_usd'],
+            reverse=True,
+        )
+        rank_map = {item['code']: idx + 1 for idx, item in enumerate(ranked)}
+        value_map = {item['code']: item['value_usd'] for item in ranked}
+        year_focus = []
+        world_exports = float(sum(value_map.values())) if value_map else None
+        for focus in focus_countries:
+            name = focus['name']
+            # match by exporter name
+            code = None
+            for key, exporter_name in by_year_names.get(year, {}).items():
+                if exporter_name.lower() == name.lower():
+                    code = key
+                    break
+            rank = rank_map.get(code) if code else None
+            value = value_map.get(code) if code else None
+            share = None
+            if value is not None and world_exports and world_exports > 0:
+                share = (float(value) / float(world_exports)) * 100.0
+            year_focus.append({
+                'code': code,
+                'name': name,
+                'rank': rank,
+                'value_usd': value,
+                'share_pct': share,
+            })
+        focus_rankings[int(year)] = year_focus
+
+    latest_rankings = focus_rankings.get(selection_year, [])
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS4)',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Aluminium, unwrought',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+        'focus_countries': focus_countries,
+        'rankings': focus_rankings,
+        'latest_rankings': latest_rankings,
+    }
+
+
+def fetch_oec_lng_top_exporters_and_rankings(start_year=2015, end_year=None, top_n=5, commodity_code='271111'):
+    """Fetch top LNG exporters from OEC API (HS6)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    focus_countries = [
+        {'name': 'United Arab Emirates'},
+        {'name': 'Bahrain'},
+        {'name': 'Qatar'},
+        {'name': 'Saudi Arabia'},
+        {'name': 'Oman'},
+    ]
+
+    records = []
+    last_error = None
+
+    try:
+        params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Exporter Country',
+            'measures': 'Trade Value',
+            'include': f'HS6 Official:{commodity_code};Year:{year_list}',
+            'limit': '20000,0',
+        }
+        resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=40)
+        resp.raise_for_status()
+        payload = resp.json()
+        records = payload.get('data') if isinstance(payload, dict) else payload
+    except Exception as e:
+        last_error = e
+        print(f"OEC LNG fetch failed: {e}")
+
+    if not records:
+        raise RuntimeError(f"OEC LNG fetch failed: {last_error}")
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        name = get_field(row, 'Exporter Country')
+        code = get_field(row, 'Exporter Country ID')
+        value = get_field(row, 'Trade Value')
+        if year is None or name is None or value is None:
+            continue
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+
+        code_norm = str(code or name).strip().lower()
+        by_year_values.setdefault(year_int, {})[code_norm] = (
+            by_year_values.get(year_int, {}).get(code_norm, 0.0) + value_f
+        )
+        by_year_names.setdefault(year_int, {})[code_norm] = str(name)
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS6)',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Natural gas, liquefied (LNG)',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+            'focus_countries': focus_countries,
+            'rankings': {},
+            'latest_rankings': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"lng_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    focus_rankings = {}
+    for year in available_years:
+        ranked = sorted(
+            [{'code': code, 'value_usd': val} for code, val in by_year_values.get(year, {}).items()],
+            key=lambda item: item['value_usd'],
+            reverse=True,
+        )
+        rank_map = {item['code']: idx + 1 for idx, item in enumerate(ranked)}
+        value_map = {item['code']: item['value_usd'] for item in ranked}
+        year_focus = []
+        world_exports = float(sum(value_map.values())) if value_map else None
+        for focus in focus_countries:
+            name = focus['name']
+            code = None
+            for key, exporter_name in by_year_names.get(year, {}).items():
+                if exporter_name.lower() == name.lower():
+                    code = key
+                    break
+            rank = rank_map.get(code) if code else None
+            value = value_map.get(code) if code else None
+            share = None
+            if value is not None and world_exports and world_exports > 0:
+                share = (float(value) / float(world_exports)) * 100.0
+            year_focus.append({
+                'code': code,
+                'name': name,
+                'rank': rank,
+                'value_usd': value,
+                'share_pct': share,
+            })
+        focus_rankings[int(year)] = year_focus
+
+    latest_rankings = focus_rankings.get(selection_year, [])
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS6)',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Natural gas, liquefied (LNG)',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+        'focus_countries': focus_countries,
+        'rankings': focus_rankings,
+        'latest_rankings': latest_rankings,
+    }
+
+
+def fetch_oec_ngl_top_exporters_and_rankings(start_year=2015, end_year=None, top_n=5, commodity_codes=None):
+    """Fetch top NGL exporters from OEC API (HS6), combining multiple NGL codes."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+    codes = commodity_codes or ['271119', '271113', '271112']
+    codes = [str(code).strip() for code in codes if str(code).strip()]
+    if not codes:
+        raise ValueError('No commodity codes provided for NGLs.')
+
+    focus_countries = [
+        {'name': 'United Arab Emirates'},
+        {'name': 'Bahrain'},
+        {'name': 'Qatar'},
+        {'name': 'Saudi Arabia'},
+        {'name': 'Oman'},
+    ]
+
+    records = []
+    last_error = None
+
+    for code in codes:
+        try:
+            params = {
+                'cube': 'trade_i_baci_a_12',
+                'drilldowns': 'Year,Exporter Country',
+                'measures': 'Trade Value',
+                'include': f'HS6 Official:{code};Year:{year_list}',
+                'limit': '20000,0',
+            }
+            resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=40)
+            resp.raise_for_status()
+            payload = resp.json()
+            code_records = payload.get('data') if isinstance(payload, dict) else payload
+            if code_records:
+                for row in code_records:
+                    row['__hs6_code'] = code
+                records.extend(code_records)
+        except Exception as e:
+            last_error = e
+            print(f"OEC NGL fetch failed for HS6 {code}: {e}")
+
+    if not records:
+        raise RuntimeError(f"OEC NGL fetch failed: {last_error}")
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        name = get_field(row, 'Exporter Country')
+        code = get_field(row, 'Exporter Country ID')
+        value = get_field(row, 'Trade Value')
+        if year is None or name is None or value is None:
+            continue
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+
+        code_norm = str(code or name).strip().lower()
+        by_year_values.setdefault(year_int, {})[code_norm] = (
+            by_year_values.get(year_int, {}).get(code_norm, 0.0) + value_f
+        )
+        by_year_names.setdefault(year_int, {})[code_norm] = str(name)
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS6)',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Petroleum gases and other gaseous hydrocarbons (NGLs)',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+            'focus_countries': focus_countries,
+            'rankings': {},
+            'latest_rankings': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"ngl_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    focus_rankings = {}
+    for year in available_years:
+        ranked = sorted(
+            [{'code': code, 'value_usd': val} for code, val in by_year_values.get(year, {}).items()],
+            key=lambda item: item['value_usd'],
+            reverse=True,
+        )
+        rank_map = {item['code']: idx + 1 for idx, item in enumerate(ranked)}
+        value_map = {item['code']: item['value_usd'] for item in ranked}
+        year_focus = []
+        world_exports = float(sum(value_map.values())) if value_map else None
+        for focus in focus_countries:
+            name = focus['name']
+            code = None
+            for key, exporter_name in by_year_names.get(year, {}).items():
+                if exporter_name.lower() == name.lower():
+                    code = key
+                    break
+            rank = rank_map.get(code) if code else None
+            value = value_map.get(code) if code else None
+            share = None
+            if value is not None and world_exports and world_exports > 0:
+                share = (float(value) / float(world_exports)) * 100.0
+            year_focus.append({
+                'code': code,
+                'name': name,
+                'rank': rank,
+                'value_usd': value,
+                'share_pct': share,
+            })
+        focus_rankings[int(year)] = year_focus
+
+    latest_rankings = focus_rankings.get(selection_year, [])
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS6)',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': ','.join(codes),
+        'commodity_label': 'NGLs (HS6 271112, 271113, 271119)',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+        'focus_countries': focus_countries,
+        'rankings': focus_rankings,
+        'latest_rankings': latest_rankings,
+    }
+
+
+def fetch_oec_sulfur_top_exporters_and_rankings(start_year=2015, end_year=None, top_n=5, commodity_code='2503'):
+    """Fetch top sulfur exporters from OEC API (HS4)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    focus_countries = [
+        {'name': 'United Arab Emirates'},
+        {'name': 'Bahrain'},
+        {'name': 'Qatar'},
+        {'name': 'Saudi Arabia'},
+        {'name': 'Oman'},
+    ]
+
+    records = []
+    last_error = None
+
+    try:
+        params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Exporter Country',
+            'measures': 'Trade Value',
+            'include': f'HS4 Official:{commodity_code};Year:{year_list}',
+            'limit': '20000,0',
+        }
+        resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=40)
+        resp.raise_for_status()
+        payload = resp.json()
+        records = payload.get('data') if isinstance(payload, dict) else payload
+    except Exception as e:
+        last_error = e
+        print(f"OEC sulfur fetch failed: {e}")
+
+    if not records:
+        raise RuntimeError(f"OEC sulfur fetch failed: {last_error}")
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        name = get_field(row, 'Exporter Country')
+        code = get_field(row, 'Exporter Country ID')
+        value = get_field(row, 'Trade Value')
+        if year is None or name is None or value is None:
+            continue
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+
+        code_norm = str(code or name).strip().lower()
+        by_year_values.setdefault(year_int, {})[code_norm] = (
+            by_year_values.get(year_int, {}).get(code_norm, 0.0) + value_f
+        )
+        by_year_names.setdefault(year_int, {})[code_norm] = str(name)
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS4)',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Sulphur (HS 2503)',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+            'focus_countries': focus_countries,
+            'rankings': {},
+            'latest_rankings': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"sulfur_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    focus_rankings = {}
+    for year in available_years:
+        ranked = sorted(
+            [{'code': code, 'value_usd': val} for code, val in by_year_values.get(year, {}).items()],
+            key=lambda item: item['value_usd'],
+            reverse=True,
+        )
+        rank_map = {item['code']: idx + 1 for idx, item in enumerate(ranked)}
+        value_map = {item['code']: item['value_usd'] for item in ranked}
+        year_focus = []
+        world_exports = float(sum(value_map.values())) if value_map else None
+        for focus in focus_countries:
+            name = focus['name']
+            code = None
+            for key, exporter_name in by_year_names.get(year, {}).items():
+                if exporter_name.lower() == name.lower():
+                    code = key
+                    break
+            rank = rank_map.get(code) if code else None
+            value = value_map.get(code) if code else None
+            share = None
+            if value is not None and world_exports and world_exports > 0:
+                share = (float(value) / float(world_exports)) * 100.0
+            year_focus.append({
+                'code': code,
+                'name': name,
+                'rank': rank,
+                'value_usd': value,
+                'share_pct': share,
+            })
+        focus_rankings[int(year)] = year_focus
+
+    latest_rankings = focus_rankings.get(selection_year, [])
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS4)',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Sulphur (HS 2503)',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+        'focus_countries': focus_countries,
+        'rankings': focus_rankings,
+        'latest_rankings': latest_rankings,
+    }
+
+
+def fetch_oec_gulf_sulfur_top_importers(start_year=2015, end_year=None, top_n=5, commodity_code='2503'):
+    """Fetch top importer destinations for sulfur exports from Gulf countries from OEC API (HS4)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    gulf_exporters = [
+        'Bahrain',
+        'Kuwait',
+        'Oman',
+        'Qatar',
+        'Saudi Arabia',
+        'United Arab Emirates',
+    ]
+    gulf_exporter_lookup = {name.casefold(): name for name in gulf_exporters}
+
+    try:
+        params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Exporter Country,Importer Country',
+            'measures': 'Trade Value',
+            'include': f'HS4 Official:{commodity_code};Year:{year_list}',
+            'limit': '50000,0',
+        }
+        resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=50)
+        resp.raise_for_status()
+        payload = resp.json()
+        records = payload.get('data') if isinstance(payload, dict) else payload
+    except Exception as e:
+        print(f"OEC Gulf sulfur importer fetch failed: {e}")
+        raise RuntimeError(f"OEC Gulf sulfur importer fetch failed: {e}")
+
+    if not records:
+        raise RuntimeError('OEC Gulf sulfur importer fetch failed: empty response')
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_importers: dict[int, dict[str, float]] = {}
+    by_year_importer_names: dict[int, dict[str, str]] = {}
+    by_year_importer_breakdown: dict[int, dict[str, dict[str, float]]] = {}
+    by_year_all_supplier_breakdown: dict[int, dict[str, dict[str, float]]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        exporter_name = get_field(row, 'Exporter Country')
+        importer_name = get_field(row, 'Importer Country')
+        importer_code = get_field(row, 'Importer Country ID')
+        value = get_field(row, 'Trade Value')
+
+        if year is None or exporter_name is None or importer_name is None or value is None:
+            continue
+
+        exporter_norm = str(exporter_name).strip().casefold()
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+
+        if value_f <= 0:
+            continue
+
+        importer_code_norm = str(importer_code or importer_name).strip().lower()
+        importer_label = str(importer_name).strip()
+        exporter_label = str(exporter_name).strip()
+
+        full_importer_breakdown = by_year_all_supplier_breakdown.setdefault(year_int, {}).setdefault(importer_code_norm, {})
+        full_importer_breakdown[exporter_label] = full_importer_breakdown.get(exporter_label, 0.0) + value_f
+
+        if exporter_norm not in gulf_exporter_lookup:
+            continue
+
+        by_year_importers.setdefault(year_int, {})[importer_code_norm] = (
+            by_year_importers.get(year_int, {}).get(importer_code_norm, 0.0) + value_f
+        )
+        by_year_importer_names.setdefault(year_int, {})[importer_code_norm] = importer_label
+
+        importer_breakdown = by_year_importer_breakdown.setdefault(year_int, {}).setdefault(importer_code_norm, {})
+        importer_breakdown[exporter_label] = importer_breakdown.get(exporter_label, 0.0) + value_f
+
+    available_years = sorted(by_year_importers.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS4)',
+            'flow': 'Exports from Gulf countries',
+            'partner': 'Importers',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Sulphur (HS 2503)',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'gulf_exporters': gulf_exporters,
+            'countries': [],
+            'points': [],
+            'latest_rankings': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_importers = sorted(
+        by_year_importers[selection_year].keys(),
+        key=lambda code: by_year_importers[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    volume_selected_importers = ranked_importers[:top_n]
+
+    try:
+        totals_params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Importer Country',
+            'measures': 'Trade Value',
+            'include': f'HS4 Official:{commodity_code};Year:{year_list}',
+            'limit': '50000,0',
+        }
+        totals_resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=totals_params, timeout=50)
+        totals_resp.raise_for_status()
+        totals_payload = totals_resp.json()
+        total_records = totals_payload.get('data') if isinstance(totals_payload, dict) else totals_payload
+    except Exception as e:
+        print(f"OEC Gulf sulfur importer total-imports fetch failed: {e}")
+        raise RuntimeError(f"OEC Gulf sulfur importer total-imports fetch failed: {e}")
+
+    total_imports_by_year: dict[int, dict[str, float]] = {}
+    for row in total_records or []:
+        year = get_field(row, 'Year')
+        importer_code = get_field(row, 'Importer Country ID')
+        importer_name = get_field(row, 'Importer Country')
+        value = get_field(row, 'Trade Value')
+        if year is None or value is None:
+            continue
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+        importer_code_norm = str(importer_code or importer_name).strip().lower()
+        total_imports_by_year.setdefault(year_int, {})[importer_code_norm] = (
+            total_imports_by_year.get(year_int, {}).get(importer_code_norm, 0.0) + value_f
+        )
+
+    selection_values = by_year_importers.get(selection_year, {})
+    selection_names = by_year_importer_names.get(selection_year, {})
+    selection_breakdown = by_year_importer_breakdown.get(selection_year, {})
+    dependence_candidates = []
+    world_total_imports_selection = float(sum(total_imports_by_year.get(selection_year, {}).values())) if total_imports_by_year.get(selection_year) else None
+    for code, value in selection_values.items():
+        total_imports_value = total_imports_by_year.get(selection_year, {}).get(code)
+        if value is None or total_imports_value is None or total_imports_value <= 0:
+            continue
+        importer_name = str(selection_names.get(code, code)).strip().casefold()
+        if importer_name == 'united arab emirates':
+            continue
+        if world_total_imports_selection is None or world_total_imports_selection <= 0:
+            continue
+        world_import_share_pct = (float(total_imports_value) / float(world_total_imports_selection)) * 100.0
+        if world_import_share_pct < 1.0:
+            continue
+        dependence_candidates.append({
+            'code': code,
+            'share_pct': (float(value) / float(total_imports_value)) * 100.0,
+            'gulf_imports_usd': value,
+            'world_import_share_pct': world_import_share_pct,
+        })
+
+    dependence_candidates.sort(
+        key=lambda item: (item.get('share_pct', 0.0), item.get('gulf_imports_usd', 0.0)),
+        reverse=True,
+    )
+    dependence_selected_importers = [item['code'] for item in dependence_candidates[:top_n]]
+
+    def build_country_series(codes, prefix, mode):
+        countries = []
+        for index, code in enumerate(codes):
+            name = selection_names.get(code, code)
+            series_key = f"{prefix}_{index + 1}_{slugify_series_key(name, fallback=code)}"
+            countries.append({
+                'code': code,
+                'name': name,
+                'series_key': series_key,
+                'mode': mode,
+                'ranking_value_usd': selection_values.get(code),
+            })
+
+        points = []
+        for year in available_years:
+            importer_values = by_year_importers.get(year, {})
+            point = {'year': int(year)}
+
+            for country in countries:
+                code = country['code']
+                gulf_imports_value = importer_values.get(code)
+                total_imports_value = total_imports_by_year.get(year, {}).get(code)
+                point[f"{country['series_key']}_gulf_imports_usd"] = gulf_imports_value
+                point[f"{country['series_key']}_total_imports_usd"] = total_imports_value
+
+                if mode == 'share_pct':
+                    if gulf_imports_value is None or total_imports_value is None or total_imports_value <= 0:
+                        point[country['series_key']] = None
+                    else:
+                        point[country['series_key']] = (float(gulf_imports_value) / float(total_imports_value)) * 100.0
+                else:
+                    point[country['series_key']] = gulf_imports_value
+
+            if any(point.get(country['series_key']) is not None for country in countries):
+                points.append(point)
+
+        return countries, points
+
+    def build_rankings(codes, ranking_metric):
+        rankings = []
+        for index, code in enumerate(codes):
+            value = selection_values.get(code)
+            total_imports_value = total_imports_by_year.get(selection_year, {}).get(code)
+            share = None
+            if value is not None and total_imports_value is not None and total_imports_value > 0:
+                share = (float(value) / float(total_imports_value)) * 100.0
+
+            exporters = selection_breakdown.get(code, {})
+            ranked_exporters = sorted(exporters.items(), key=lambda item: item[1], reverse=True)
+            all_exporters = by_year_all_supplier_breakdown.get(selection_year, {}).get(code, {})
+            non_gulf_exporters = [
+                (exporter_name, exporter_value)
+                for exporter_name, exporter_value in all_exporters.items()
+                if str(exporter_name).strip().casefold() not in gulf_exporter_lookup
+            ]
+            non_gulf_exporters.sort(key=lambda item: item[1], reverse=True)
+            largest_non_gulf_supplier = None
+            if non_gulf_exporters:
+                supplier_name, supplier_value = non_gulf_exporters[0]
+                supplier_share_pct = None
+                if total_imports_value is not None and total_imports_value > 0:
+                    supplier_share_pct = (float(supplier_value) / float(total_imports_value)) * 100.0
+                largest_non_gulf_supplier = {
+                    'name': supplier_name,
+                    'value_usd': supplier_value,
+                    'share_pct': supplier_share_pct,
+                }
+            rankings.append({
+                'rank': index + 1,
+                'code': code,
+                'name': selection_names.get(code, code),
+                'gulf_imports_usd': value,
+                'total_imports_usd': total_imports_value,
+                'share_pct': share,
+                'ranking_metric': ranking_metric,
+                'largest_non_gulf_supplier': largest_non_gulf_supplier,
+                'gulf_suppliers': [
+                    {'name': exporter_name, 'value_usd': exporter_value}
+                    for exporter_name, exporter_value in ranked_exporters
+                ],
+            })
+        return rankings
+
+    dependence_countries, dependence_points = build_country_series(
+        dependence_selected_importers,
+        'gulf_sulfur_dependence_importer',
+        'share_pct',
+    )
+    volume_countries, volume_points = build_country_series(
+        volume_selected_importers,
+        'gulf_sulfur_volume_importer',
+        'gulf_imports_usd',
+    )
+    dependence_latest_rankings = build_rankings(dependence_selected_importers, 'share_pct')
+    volume_latest_rankings = build_rankings(volume_selected_importers, 'gulf_imports_usd')
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS4)',
+        'flow': 'Exports from Gulf countries',
+        'partner': 'Importers',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Sulphur (HS 2503)',
+        'metric': 'gulf_sulfur_importer_dependence_and_volume',
+        'selection_year': selection_year,
+        'start_year': available_years[0] if available_years else None,
+        'end_year': available_years[-1] if available_years else None,
+        'gulf_exporters': gulf_exporters,
+        'dependence_exclusions': {
+            'excluded_importers': ['United Arab Emirates'],
+            'minimum_world_import_share_pct': 1.0,
+        },
+        'dependence_countries': dependence_countries,
+        'dependence_points': dependence_points,
+        'volume_countries': volume_countries,
+        'volume_points': volume_points,
+        'dependence_latest_rankings': dependence_latest_rankings,
+        'volume_latest_rankings': volume_latest_rankings,
+        'countries': dependence_countries,
+        'points': dependence_points,
+        'latest_rankings': dependence_latest_rankings,
+    }
+
+
+def fetch_oec_urea_top_exporters_and_rankings(start_year=2015, end_year=None, top_n=5, commodity_code='310210'):
+    """Fetch top urea exporters from OEC API (HS6)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    records = []
+    last_error = None
+
+    try:
+        params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Exporter Country',
+            'measures': 'Trade Value',
+            'include': f'HS6 Official:{commodity_code};Year:{year_list}',
+            'limit': '20000,0',
+        }
+        resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=40)
+        resp.raise_for_status()
+        payload = resp.json()
+        records = payload.get('data') if isinstance(payload, dict) else payload
+    except Exception as e:
+        last_error = e
+        print(f"OEC urea exporter fetch failed: {e}")
+
+    if not records:
+        raise RuntimeError(f"OEC urea exporter fetch failed: {last_error}")
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        name = get_field(row, 'Exporter Country')
+        code = get_field(row, 'Exporter Country ID')
+        value = get_field(row, 'Trade Value')
+        if year is None or name is None or value is None:
+            continue
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+
+        code_norm = str(code or name).strip().lower()
+        by_year_values.setdefault(year_int, {})[code_norm] = (
+            by_year_values.get(year_int, {}).get(code_norm, 0.0) + value_f
+        )
+        by_year_names.setdefault(year_int, {})[code_norm] = str(name)
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS6)',
+            'flow': 'Exports',
+            'partner': 'World',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Urea (HS 310210)',
+            'metric': 'share_of_world_exports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda code: by_year_values[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_names.get(selection_year, {}).get(code, code)
+        series_key = f"urea_exporter_{index + 1}_{slugify_series_key(name, fallback=code.lower())}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+        point = {
+            'year': int(year),
+            'world_exports_usd': world_exports,
+        }
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS6)',
+        'flow': 'Exports',
+        'partner': 'World',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Urea (HS 310210)',
+        'metric': 'share_of_world_exports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+    }
+
+
+def fetch_oec_gulf_urea_top_importers(start_year=2015, end_year=None, top_n=5, commodity_code='310210'):
+    """Fetch top importer destinations for urea exports from Gulf countries from OEC API (HS6)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    gulf_exporters = [
+        'Bahrain',
+        'Kuwait',
+        'Oman',
+        'Qatar',
+        'Saudi Arabia',
+        'United Arab Emirates',
+    ]
+    gulf_exporter_lookup = {name.casefold(): name for name in gulf_exporters}
+
+    try:
+        params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Exporter Country,Importer Country',
+            'measures': 'Trade Value',
+            'include': f'HS6 Official:{commodity_code};Year:{year_list}',
+            'limit': '50000,0',
+        }
+        resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=50)
+        resp.raise_for_status()
+        payload = resp.json()
+        records = payload.get('data') if isinstance(payload, dict) else payload
+    except Exception as e:
+        print(f"OEC Gulf urea importer fetch failed: {e}")
+        raise RuntimeError(f"OEC Gulf urea importer fetch failed: {e}")
+
+    if not records:
+        raise RuntimeError('OEC Gulf urea importer fetch failed: empty response')
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_importers: dict[int, dict[str, float]] = {}
+    by_year_importer_names: dict[int, dict[str, str]] = {}
+    by_year_importer_breakdown: dict[int, dict[str, dict[str, float]]] = {}
+    by_year_all_supplier_breakdown: dict[int, dict[str, dict[str, float]]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        exporter_name = get_field(row, 'Exporter Country')
+        importer_name = get_field(row, 'Importer Country')
+        importer_code = get_field(row, 'Importer Country ID')
+        value = get_field(row, 'Trade Value')
+
+        if year is None or exporter_name is None or importer_name is None or value is None:
+            continue
+
+        exporter_norm = str(exporter_name).strip().casefold()
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+
+        if value_f <= 0:
+            continue
+
+        importer_code_norm = str(importer_code or importer_name).strip().lower()
+        importer_label = str(importer_name).strip()
+        exporter_label = str(exporter_name).strip()
+
+        full_importer_breakdown = by_year_all_supplier_breakdown.setdefault(year_int, {}).setdefault(importer_code_norm, {})
+        full_importer_breakdown[exporter_label] = full_importer_breakdown.get(exporter_label, 0.0) + value_f
+
+        if exporter_norm not in gulf_exporter_lookup:
+            continue
+
+        by_year_importers.setdefault(year_int, {})[importer_code_norm] = (
+            by_year_importers.get(year_int, {}).get(importer_code_norm, 0.0) + value_f
+        )
+        by_year_importer_names.setdefault(year_int, {})[importer_code_norm] = importer_label
+
+        importer_breakdown = by_year_importer_breakdown.setdefault(year_int, {}).setdefault(importer_code_norm, {})
+        importer_breakdown[exporter_label] = importer_breakdown.get(exporter_label, 0.0) + value_f
+
+    available_years = sorted(by_year_importers.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS6)',
+            'flow': 'Exports from Gulf countries',
+            'partner': 'Importers',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Urea (HS 310210)',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'gulf_exporters': gulf_exporters,
+            'countries': [],
+            'points': [],
+            'latest_rankings': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_importers = sorted(
+        by_year_importers[selection_year].keys(),
+        key=lambda code: by_year_importers[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    volume_selected_importers = ranked_importers[:top_n]
+
+    try:
+        totals_params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Importer Country',
+            'measures': 'Trade Value',
+            'include': f'HS6 Official:{commodity_code};Year:{year_list}',
+            'limit': '50000,0',
+        }
+        totals_resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=totals_params, timeout=50)
+        totals_resp.raise_for_status()
+        totals_payload = totals_resp.json()
+        total_records = totals_payload.get('data') if isinstance(totals_payload, dict) else totals_payload
+    except Exception as e:
+        print(f"OEC Gulf urea importer total-imports fetch failed: {e}")
+        raise RuntimeError(f"OEC Gulf urea importer total-imports fetch failed: {e}")
+
+    total_imports_by_year: dict[int, dict[str, float]] = {}
+    for row in total_records or []:
+        year = get_field(row, 'Year')
+        importer_code = get_field(row, 'Importer Country ID')
+        importer_name = get_field(row, 'Importer Country')
+        value = get_field(row, 'Trade Value')
+        if year is None or value is None:
+            continue
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+        importer_code_norm = str(importer_code or importer_name).strip().lower()
+        total_imports_by_year.setdefault(year_int, {})[importer_code_norm] = (
+            total_imports_by_year.get(year_int, {}).get(importer_code_norm, 0.0) + value_f
+        )
+
+    selection_values = by_year_importers.get(selection_year, {})
+    selection_names = by_year_importer_names.get(selection_year, {})
+    selection_breakdown = by_year_importer_breakdown.get(selection_year, {})
+    dependence_candidates = []
+    world_total_imports_selection = float(sum(total_imports_by_year.get(selection_year, {}).values())) if total_imports_by_year.get(selection_year) else None
+    for code, value in selection_values.items():
+        total_imports_value = total_imports_by_year.get(selection_year, {}).get(code)
+        if value is None or total_imports_value is None or total_imports_value <= 0:
+            continue
+        importer_name = str(selection_names.get(code, code)).strip().casefold()
+        if importer_name == 'united arab emirates':
+            continue
+        if world_total_imports_selection is None or world_total_imports_selection <= 0:
+            continue
+        world_import_share_pct = (float(total_imports_value) / float(world_total_imports_selection)) * 100.0
+        if world_import_share_pct < 1.0:
+            continue
+        dependence_candidates.append({
+            'code': code,
+            'share_pct': (float(value) / float(total_imports_value)) * 100.0,
+            'gulf_imports_usd': value,
+            'world_import_share_pct': world_import_share_pct,
+        })
+
+    dependence_candidates.sort(
+        key=lambda item: (item.get('share_pct', 0.0), item.get('gulf_imports_usd', 0.0)),
+        reverse=True,
+    )
+    dependence_selected_importers = [item['code'] for item in dependence_candidates[:top_n]]
+
+    def build_country_series(codes, prefix, mode):
+        countries = []
+        for index, code in enumerate(codes):
+            name = selection_names.get(code, code)
+            series_key = f"{prefix}_{index + 1}_{slugify_series_key(name, fallback=code)}"
+            countries.append({
+                'code': code,
+                'name': name,
+                'series_key': series_key,
+                'mode': mode,
+                'ranking_value_usd': selection_values.get(code),
+            })
+
+        points = []
+        for year in available_years:
+            importer_values = by_year_importers.get(year, {})
+            point = {'year': int(year)}
+
+            for country in countries:
+                code = country['code']
+                gulf_imports_value = importer_values.get(code)
+                total_imports_value = total_imports_by_year.get(year, {}).get(code)
+                point[f"{country['series_key']}_gulf_imports_usd"] = gulf_imports_value
+                point[f"{country['series_key']}_total_imports_usd"] = total_imports_value
+
+                if mode == 'share_pct':
+                    if gulf_imports_value is None or total_imports_value is None or total_imports_value <= 0:
+                        point[country['series_key']] = None
+                    else:
+                        point[country['series_key']] = (float(gulf_imports_value) / float(total_imports_value)) * 100.0
+                else:
+                    point[country['series_key']] = gulf_imports_value
+
+            if any(point.get(country['series_key']) is not None for country in countries):
+                points.append(point)
+
+        return countries, points
+
+    def build_rankings(codes, ranking_metric):
+        rankings = []
+        for index, code in enumerate(codes):
+            value = selection_values.get(code)
+            total_imports_value = total_imports_by_year.get(selection_year, {}).get(code)
+            share = None
+            if value is not None and total_imports_value is not None and total_imports_value > 0:
+                share = (float(value) / float(total_imports_value)) * 100.0
+
+            exporters = selection_breakdown.get(code, {})
+            ranked_exporters = sorted(exporters.items(), key=lambda item: item[1], reverse=True)
+            all_exporters = by_year_all_supplier_breakdown.get(selection_year, {}).get(code, {})
+            non_gulf_exporters = [
+                (exporter_name, exporter_value)
+                for exporter_name, exporter_value in all_exporters.items()
+                if str(exporter_name).strip().casefold() not in gulf_exporter_lookup
+            ]
+            non_gulf_exporters.sort(key=lambda item: item[1], reverse=True)
+            largest_non_gulf_supplier = None
+            if non_gulf_exporters:
+                supplier_name, supplier_value = non_gulf_exporters[0]
+                supplier_share_pct = None
+                if total_imports_value is not None and total_imports_value > 0:
+                    supplier_share_pct = (float(supplier_value) / float(total_imports_value)) * 100.0
+                largest_non_gulf_supplier = {
+                    'name': supplier_name,
+                    'value_usd': supplier_value,
+                    'share_pct': supplier_share_pct,
+                }
+            rankings.append({
+                'rank': index + 1,
+                'code': code,
+                'name': selection_names.get(code, code),
+                'gulf_imports_usd': value,
+                'total_imports_usd': total_imports_value,
+                'share_pct': share,
+                'ranking_metric': ranking_metric,
+                'largest_non_gulf_supplier': largest_non_gulf_supplier,
+                'gulf_suppliers': [
+                    {'name': exporter_name, 'value_usd': exporter_value}
+                    for exporter_name, exporter_value in ranked_exporters
+                ],
+            })
+        return rankings
+
+    dependence_countries, dependence_points = build_country_series(
+        dependence_selected_importers,
+        'gulf_urea_dependence_importer',
+        'share_pct',
+    )
+    volume_countries, volume_points = build_country_series(
+        volume_selected_importers,
+        'gulf_urea_volume_importer',
+        'gulf_imports_usd',
+    )
+    dependence_latest_rankings = build_rankings(dependence_selected_importers, 'share_pct')
+    volume_latest_rankings = build_rankings(volume_selected_importers, 'gulf_imports_usd')
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS6)',
+        'flow': 'Exports from Gulf countries',
+        'partner': 'Importers',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Urea (HS 310210)',
+        'metric': 'gulf_urea_importer_dependence_and_volume',
+        'selection_year': selection_year,
+        'start_year': available_years[0] if available_years else None,
+        'end_year': available_years[-1] if available_years else None,
+        'gulf_exporters': gulf_exporters,
+        'dependence_exclusions': {
+            'excluded_importers': ['United Arab Emirates'],
+            'minimum_world_import_share_pct': 1.0,
+        },
+        'dependence_countries': dependence_countries,
+        'dependence_points': dependence_points,
+        'volume_countries': volume_countries,
+        'volume_points': volume_points,
+        'dependence_latest_rankings': dependence_latest_rankings,
+        'volume_latest_rankings': volume_latest_rankings,
+        'countries': dependence_countries,
+        'points': dependence_points,
+        'latest_rankings': dependence_latest_rankings,
+    }
+
+
+def fetch_oec_eurozone_dap_import_dependencies(start_year=2015, end_year=None, top_n=5, commodity_code='310530'):
+    """Fetch top non-Eurozone suppliers of Eurozone DAP imports from OEC API (HS6)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    eurozone_name_lookup = {name.casefold(): name for name in EUROZONE_MEMBER_NAMES}
+
+    try:
+        params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Exporter Country,Importer Country',
+            'measures': 'Trade Value',
+            'include': f'HS6 Official:{commodity_code};Year:{year_list}',
+            'limit': '50000,0',
+        }
+        resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=50)
+        resp.raise_for_status()
+        payload = resp.json()
+        records = payload.get('data') if isinstance(payload, dict) else payload
+    except Exception as e:
+        print(f"OEC Eurozone DAP dependency fetch failed: {e}")
+        raise RuntimeError(f"OEC Eurozone DAP dependency fetch failed: {e}")
+
+    if not records:
+        raise RuntimeError('OEC Eurozone DAP dependency fetch failed: empty response')
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_suppliers: dict[int, dict[str, float]] = {}
+    by_year_supplier_names: dict[int, dict[str, str]] = {}
+    by_year_importers: dict[int, dict[str, float]] = {}
+    by_year_importer_names: dict[int, dict[str, str]] = {}
+    by_year_importer_supplier_breakdown: dict[int, dict[str, dict[str, float]]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        exporter_name = get_field(row, 'Exporter Country')
+        exporter_code = get_field(row, 'Exporter Country ID')
+        importer_name = get_field(row, 'Importer Country')
+        value = get_field(row, 'Trade Value')
+
+        if year is None or exporter_name is None or importer_name is None or value is None:
+            continue
+
+        importer_norm = str(importer_name).strip().casefold()
+        exporter_norm = str(exporter_name).strip().casefold()
+        if importer_norm not in eurozone_name_lookup:
+            continue
+        if exporter_norm in eurozone_name_lookup:
+            continue
+
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+
+        if value_f <= 0:
+            continue
+
+        exporter_code_norm = str(exporter_code or exporter_name).strip().lower()
+        exporter_label = str(exporter_name).strip()
+        importer_code_norm = slugify_series_key(str(importer_name).strip(), fallback=str(importer_name).strip().lower())
+        by_year_suppliers.setdefault(year_int, {})[exporter_code_norm] = (
+            by_year_suppliers.get(year_int, {}).get(exporter_code_norm, 0.0) + value_f
+        )
+        by_year_supplier_names.setdefault(year_int, {})[exporter_code_norm] = exporter_label
+        by_year_importers.setdefault(year_int, {})[importer_code_norm] = (
+            by_year_importers.get(year_int, {}).get(importer_code_norm, 0.0) + value_f
+        )
+        by_year_importer_names.setdefault(year_int, {})[importer_code_norm] = str(importer_name).strip()
+        supplier_breakdown = by_year_importer_supplier_breakdown.setdefault(year_int, {}).setdefault(importer_code_norm, {})
+        supplier_breakdown[exporter_label] = supplier_breakdown.get(exporter_label, 0.0) + value_f
+
+    available_years = sorted(by_year_suppliers.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS6)',
+            'flow': 'Imports',
+            'partner': 'Non-Eurozone suppliers',
+            'importer': 'Eurozone aggregate',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Diammonium phosphate (DAP) (HS 310530)',
+            'metric': 'share_of_eurozone_extra_imports_pct',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_suppliers[selection_year].keys(),
+        key=lambda code: by_year_suppliers[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries = []
+    for index, code in enumerate(selected_codes):
+        name = by_year_supplier_names.get(selection_year, {}).get(code, code)
+        series_key = f"eurozone_dap_supplier_{index + 1}_{slugify_series_key(name, fallback=code)}_pct"
+        countries.append({
+            'code': code,
+            'name': name,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_suppliers[selection_year].get(code),
+        })
+
+    ranked_importer_codes = sorted(
+        by_year_importers[selection_year].keys(),
+        key=lambda code: by_year_importers[selection_year].get(code, 0.0),
+        reverse=True,
+    )
+    volume_selected_codes = ranked_importer_codes[:top_n]
+
+    volume_countries = []
+    for index, code in enumerate(volume_selected_codes):
+        name = by_year_importer_names.get(selection_year, {}).get(code, code)
+        series_key = f"eurozone_dap_importer_{index + 1}_{slugify_series_key(name, fallback=code)}_usd"
+        volume_countries.append({
+            'code': code,
+            'name': name,
+            'series_key': series_key,
+            'ranking_value_usd': by_year_importers[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_suppliers.get(year, {})
+        eurozone_external_imports = float(sum(year_values.values())) if year_values else None
+        point = {
+            'year': int(year),
+            'eurozone_external_imports_usd': eurozone_external_imports,
+        }
+
+        for country in countries:
+            code = country['code']
+            value_key = country['series_key'].replace('_pct', '_usd')
+            value = year_values.get(code)
+            point[value_key] = value
+            if value is None or eurozone_external_imports is None or eurozone_external_imports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(eurozone_external_imports)) * 100.0
+
+        if any(point.get(country['series_key']) is not None for country in countries):
+            points.append(point)
+
+    volume_points = []
+    for year in available_years:
+        year_values = by_year_importers.get(year, {})
+        point = {'year': int(year)}
+        for country in volume_countries:
+            value = year_values.get(country['code'])
+            point[country['series_key']] = value
+        if any(point.get(country['series_key']) is not None for country in volume_countries):
+            volume_points.append(point)
+
+    latest_volume_rankings = []
+    for index, code in enumerate(volume_selected_codes):
+        value = by_year_importers.get(selection_year, {}).get(code)
+        eurozone_external_imports = float(sum(by_year_suppliers.get(selection_year, {}).values())) if by_year_suppliers.get(selection_year) else None
+        share = None
+        if value is not None and eurozone_external_imports and eurozone_external_imports > 0:
+            share = (float(value) / float(eurozone_external_imports)) * 100.0
+
+        supplier_breakdown = by_year_importer_supplier_breakdown.get(selection_year, {}).get(code, {})
+        top_partners = sorted(supplier_breakdown.items(), key=lambda item: item[1], reverse=True)[:3]
+        latest_volume_rankings.append({
+            'rank': index + 1,
+            'code': code,
+            'name': by_year_importer_names.get(selection_year, {}).get(code, code),
+            'value_usd': value,
+            'share_pct': share,
+            'top_non_eurozone_suppliers': [
+                {'name': partner_name, 'value_usd': partner_value}
+                for partner_name, partner_value in top_partners
+            ],
+        })
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS6)',
+        'flow': 'Imports',
+        'partner': 'Non-Eurozone suppliers',
+        'importer': 'Eurozone aggregate',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Diammonium phosphate (DAP) (HS 310530)',
+        'metric': 'share_of_eurozone_extra_imports_pct',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries,
+        'points': points,
+        'volume_countries': volume_countries,
+        'volume_points': volume_points,
+        'latest_volume_rankings': latest_volume_rankings,
+    }
+
+
+def fetch_oec_eurozone_urea_supplier_structure(start_year=2015, end_year=None, top_n=4, commodity_code='310210'):
+    """Fetch latest-year Eurozone extra-Eurozone urea import shares by supplier, with Hormuz bloc combined."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    years = list(range(int(start_year), int(end_year) + 1))
+    year_list = ','.join(str(y) for y in years)
+    top_n = max(1, int(top_n))
+
+    eurozone_name_lookup = {name.casefold(): name for name in EUROZONE_MEMBER_NAMES}
+    hormuz_name_lookup = {name.casefold(): name for name in HORMUZ_SUPPLIER_NAMES}
+
+    try:
+        params = {
+            'cube': 'trade_i_baci_a_12',
+            'drilldowns': 'Year,Exporter Country,Importer Country',
+            'measures': 'Trade Value',
+            'include': f'HS6 Official:{commodity_code};Year:{year_list}',
+            'limit': '50000,0',
+        }
+        resp = requests.get('https://api-v2.oec.world/tesseract/data.jsonrecords', params=params, timeout=50)
+        resp.raise_for_status()
+        payload = resp.json()
+        records = payload.get('data') if isinstance(payload, dict) else payload
+    except Exception as e:
+        print(f"OEC Eurozone urea supplier structure fetch failed: {e}")
+        raise RuntimeError(f"OEC Eurozone urea supplier structure fetch failed: {e}")
+
+    if not records:
+        raise RuntimeError('OEC Eurozone urea supplier structure fetch failed: empty response')
+
+    def get_field(row, *keys):
+        for key in keys:
+            if key in row:
+                return row.get(key)
+        return None
+
+    by_year_suppliers: dict[int, dict[str, float]] = {}
+    by_year_supplier_names: dict[int, dict[str, str]] = {}
+
+    for row in records:
+        year = get_field(row, 'Year')
+        exporter_name = get_field(row, 'Exporter Country')
+        exporter_code = get_field(row, 'Exporter Country ID')
+        importer_name = get_field(row, 'Importer Country')
+        value = get_field(row, 'Trade Value')
+
+        if year is None or exporter_name is None or importer_name is None or value is None:
+            continue
+
+        importer_norm = str(importer_name).strip().casefold()
+        exporter_norm = str(exporter_name).strip().casefold()
+        if importer_norm not in eurozone_name_lookup:
+            continue
+        if exporter_norm in eurozone_name_lookup:
+            continue
+
+        try:
+            year_int = int(year)
+            value_f = float(value)
+        except Exception:
+            continue
+        if value_f <= 0:
+            continue
+
+        exporter_code_norm = str(exporter_code or exporter_name).strip().lower()
+        exporter_label = str(exporter_name).strip()
+        by_year_suppliers.setdefault(year_int, {})[exporter_code_norm] = (
+            by_year_suppliers.get(year_int, {}).get(exporter_code_norm, 0.0) + value_f
+        )
+        by_year_supplier_names.setdefault(year_int, {})[exporter_code_norm] = exporter_label
+
+    available_years = sorted(by_year_suppliers.keys())
+    if not available_years:
+        return {
+            'source': 'OEC',
+            'dataset': 'trade_i_baci (HS6)',
+            'flow': 'Imports',
+            'partner': 'Non-Eurozone suppliers',
+            'importer': 'Eurozone aggregate',
+            'commodity_code': str(commodity_code),
+            'commodity_label': 'Urea (HS 310210)',
+            'selection_year': None,
+            'bars': [],
+            'hormuz_group_label': 'Hormuz / Gulf suppliers combined',
+            'takeaways': [],
+        }
+
+    selection_year = available_years[-1]
+    selection_values = by_year_suppliers.get(selection_year, {})
+    selection_names = by_year_supplier_names.get(selection_year, {})
+    eurozone_external_imports = float(sum(selection_values.values())) if selection_values else None
+
+    hormuz_value = 0.0
+    non_hormuz = []
+    for code, value in selection_values.items():
+        name = selection_names.get(code, code)
+        if str(name).strip().casefold() in hormuz_name_lookup:
+            hormuz_value += float(value)
+        else:
+            non_hormuz.append({
+                'code': code,
+                'name': name,
+                'value_usd': float(value),
+            })
+
+    non_hormuz.sort(key=lambda item: item['value_usd'], reverse=True)
+    top_non_hormuz = non_hormuz[:top_n]
+
+    bars = []
+    for item in top_non_hormuz:
+        share_pct = None
+        if eurozone_external_imports and eurozone_external_imports > 0:
+            share_pct = (item['value_usd'] / eurozone_external_imports) * 100.0
+        bars.append({
+            'label': item['name'],
+            'value_usd': item['value_usd'],
+            'share_pct': share_pct,
+            'category': 'supplier',
+        })
+
+    hormuz_share_pct = None
+    if eurozone_external_imports and eurozone_external_imports > 0:
+        hormuz_share_pct = (hormuz_value / eurozone_external_imports) * 100.0
+    bars.append({
+        'label': 'Hormuz / Gulf suppliers combined',
+        'value_usd': hormuz_value,
+        'share_pct': hormuz_share_pct,
+        'category': 'hormuz_combined',
+    })
+
+    bars.sort(key=lambda item: (item['share_pct'] or 0.0), reverse=True)
+
+    takeaways = [
+        'Direct Eurozone exposure to Hormuz urea appears limited.',
+        'Supply is diversified outside the Gulf.',
+        'Urea is therefore not a major Europe-specific vulnerability in this scenario.',
+    ]
+
+    return {
+        'source': 'OEC',
+        'dataset': 'trade_i_baci (HS6)',
+        'flow': 'Imports',
+        'partner': 'Non-Eurozone suppliers',
+        'importer': 'Eurozone aggregate',
+        'commodity_code': str(commodity_code),
+        'commodity_label': 'Urea (HS 310210)',
+        'selection_year': selection_year,
+        'eurozone_external_imports_usd': eurozone_external_imports,
+        'top_n_non_hormuz': top_n,
+        'hormuz_group_label': 'Hormuz / Gulf suppliers combined',
+        'bars': bars,
+        'takeaways': takeaways,
+    }
+
+
+def fetch_undata_naphtha_exports_share_world(start_year=2010, end_year=None, top_n=5):
+    """Fetch Naphtha exports share of world exports from UN Energy Statistics (UNdata)."""
+    if end_year is None:
+        end_year = datetime.now(timezone.utc).year - 1
+
+    top_n = max(1, int(top_n))
+    years = set(range(int(start_year), int(end_year) + 1))
+
+    focus_countries = [
+        {'name': 'United Arab Emirates'},
+        {'name': 'Bahrain'},
+        {'name': 'Qatar'},
+        {'name': 'Saudi Arabia'},
+    ]
+
+    url = 'https://data.un.org/Handlers/DownloadHandler.ashx'
+    params = {
+        'DataFilter': 'cmID:NP',
+        'DataMartId': 'EDATA',
+        'Format': 'csv',
+    }
+
+    try:
+        resp = requests.get(url, params=params, timeout=40)
+        resp.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(f"UNdata download failed: {e}") from e
+
+    try:
+        zip_data = zipfile.ZipFile(io.BytesIO(resp.content))
+        csv_name = zip_data.namelist()[0]
+        raw_lines = zip_data.open(csv_name).read().decode('utf-8', errors='replace').splitlines()
+        reader = csv.reader(raw_lines)
+        headers = next(reader)
+    except Exception as e:
+        raise RuntimeError(f"UNdata zip parse failed: {e}") from e
+
+    header_map = {name: idx for idx, name in enumerate(headers)}
+    idx_country = header_map.get('Country or Area')
+    idx_trans = header_map.get('Commodity - Transaction')
+    idx_year = header_map.get('Year')
+    idx_unit = header_map.get('Unit')
+    idx_qty = header_map.get('Quantity')
+
+    if None in (idx_country, idx_trans, idx_year, idx_qty):
+        raise RuntimeError('UNdata CSV missing required columns.')
+
+    exports_by_country_year: dict[str, dict[int, float]] = {}
+    unit_label = None
+
+    for row in reader:
+        if len(row) <= max(idx_country, idx_trans, idx_year, idx_qty):
+            continue
+        country = row[idx_country].strip()
+        trans = row[idx_trans].strip()
+        year_raw = row[idx_year].strip()
+        qty_raw = row[idx_qty].strip()
+        if not country or not year_raw or not qty_raw:
+            continue
+        try:
+            year = int(year_raw)
+        except Exception:
+            continue
+        if year not in years:
+            continue
+        try:
+            qty = float(qty_raw)
+        except Exception:
+            continue
+
+        if unit_label is None and idx_unit is not None and idx_unit < len(row):
+            unit_label = row[idx_unit].strip() or unit_label
+
+        if trans == 'Naphtha - Exports':
+            exports_by_country_year.setdefault(country, {})[year] = (
+                exports_by_country_year.get(country, {}).get(year, 0.0) + qty
+            )
+
+    by_year_values: dict[int, dict[str, float]] = {}
+    by_year_names: dict[int, dict[str, str]] = {}
+
+    countries = sorted(set(exports_by_country_year.keys()))
+    for country in countries:
+        for year in years:
+            exports_val = exports_by_country_year.get(country, {}).get(year)
+            if exports_val is None:
+                continue
+            by_year_values.setdefault(year, {})[country] = (exports_val or 0.0)
+            by_year_names.setdefault(year, {})[country] = country
+
+    available_years = sorted(by_year_values.keys())
+    if not available_years:
+        return {
+            'source': 'UN Energy Statistics (UNdata)',
+            'dataset': 'Energy Statistics Database',
+            'flow': 'Exports',
+            'unit': unit_label or 'Metric tons, thousand',
+            'commodity': 'Naphtha',
+            'selection_year': None,
+            'start_year': None,
+            'end_year': None,
+            'countries': [],
+            'points': [],
+            'focus_countries': focus_countries,
+            'rankings': {},
+            'latest_rankings': [],
+        }
+
+    selection_year = available_years[-1]
+    ranked_codes = sorted(
+        by_year_values[selection_year].keys(),
+        key=lambda name: by_year_values[selection_year].get(name, 0.0),
+        reverse=True,
+    )
+    selected_codes = ranked_codes[:top_n]
+
+    countries_meta = []
+    for index, code in enumerate(selected_codes):
+        series_key = f"naphtha_exporter_{index + 1}_{slugify_series_key(code)}_pct"
+        countries_meta.append({
+            'code': code,
+            'name': code,
+            'series_key': series_key,
+            'ranking_value': by_year_values[selection_year].get(code),
+        })
+
+    points = []
+    for year in available_years:
+        year_values = by_year_values.get(year, {})
+        world_exports = float(sum(year_values.values())) if year_values else None
+        point = {'year': int(year)}
+        for country in countries_meta:
+            code = country['code']
+            value = year_values.get(code)
+            if value is None or world_exports is None or world_exports <= 0:
+                point[country['series_key']] = None
+            else:
+                point[country['series_key']] = (float(value) / float(world_exports)) * 100.0
+        if any(point.get(country['series_key']) is not None for country in countries_meta):
+            points.append(point)
+
+    focus_rankings = {}
+    for year in available_years:
+        ranked = sorted(
+            [{'code': code, 'value': val} for code, val in by_year_values.get(year, {}).items()],
+            key=lambda item: item['value'],
+            reverse=True,
+        )
+        rank_map = {item['code']: idx + 1 for idx, item in enumerate(ranked)}
+        world_exports = float(sum(item['value'] for item in ranked)) if ranked else None
+        year_focus = []
+        for focus in focus_countries:
+            name = focus['name']
+            code = name if name in by_year_values.get(year, {}) else None
+            value = by_year_values.get(year, {}).get(code) if code else None
+            rank = rank_map.get(code) if code else None
+            share = None
+            if value is not None and world_exports and world_exports > 0:
+                share = (float(value) / float(world_exports)) * 100.0
+            year_focus.append({
+                'code': code,
+                'name': name,
+                'rank': rank,
+                'value': value,
+                'share_pct': share,
+            })
+        focus_rankings[int(year)] = year_focus
+
+    latest_rankings = focus_rankings.get(selection_year, [])
+
+    return {
+        'source': 'UN Energy Statistics (UNdata)',
+        'dataset': 'Energy Statistics Database',
+        'flow': 'Exports',
+        'unit': unit_label or 'Metric tons, thousand',
+        'commodity': 'Naphtha',
+        'selection_year': selection_year,
+        'start_year': points[0]['year'] if points else None,
+        'end_year': points[-1]['year'] if points else None,
+        'countries': countries_meta,
+        'points': points,
+        'focus_countries': focus_countries,
+        'rankings': focus_rankings,
+        'latest_rankings': latest_rankings,
+    }
+
+
 @app.route('/api/fertilizer-exports-share-world', methods=['GET'])
 def get_fertilizer_exports_share_world():
     """Return annual share of world fertilizer exports for selected countries."""
@@ -4588,6 +7640,393 @@ def get_fertilizer_exports_share_world():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         print(f"Error in fertilizer-exports-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/petrochem-top-exporters-share-world', methods=['GET'])
+@app.route('/api/petrochem-top-exporters', methods=['GET'])
+def get_petrochem_top_exporters_share_world():
+    """Return annual top exporters of petrochemicals as share of world exports."""
+    try:
+        start_year = int(request.args.get('start_year', 2018))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '29')).strip() or '29'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_petrochem_top_exporters_share_world(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in petrochem-top-exporters-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/naphtha-top-exporters-share-world', methods=['GET'])
+@app.route('/api/naphtha-top-exporters', methods=['GET'])
+def get_naphtha_top_exporters_share_world():
+    """Return annual top exporters of naphtha as share of world exports."""
+    try:
+        start_year = int(request.args.get('start_year', 2018))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '271012')).strip() or '271012'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_naphtha_top_exporters_share_world(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in naphtha-top-exporters-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/naphtha-top-importers-share-world', methods=['GET'])
+@app.route('/api/naphtha-top-importers', methods=['GET'])
+def get_naphtha_top_importers_share_world():
+    """Return annual top importers of naphtha as share of world imports."""
+    try:
+        start_year = int(request.args.get('start_year', 2018))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '271012')).strip() or '271012'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_naphtha_top_importers_share_world(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in naphtha-top-importers-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/aluminum-top-exporters-share-world', methods=['GET'])
+@app.route('/api/aluminium-top-exporters-share-world', methods=['GET'])
+@app.route('/api/aluminum-top-exporters', methods=['GET'])
+@app.route('/api/aluminium-top-exporters', methods=['GET'])
+def get_aluminum_top_exporters_share_world():
+    """Return annual top exporters of unwrought aluminium as share of world exports."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '7601')).strip() or '7601'
+        source = (request.args.get('source') or 'oec').strip().lower()
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = None
+        if source in {'oec', 'auto'}:
+            try:
+                payload = fetch_oec_aluminum_top_exporters_and_rankings(
+                    start_year=start_year,
+                    end_year=end_year,
+                    top_n=top_n,
+                    commodity_code=commodity_code,
+                )
+            except Exception as e:
+                print(f"OEC aluminum fetch failed, falling back to Comtrade: {e}")
+
+        if payload is None or not payload.get('points'):
+            payload = fetch_aluminum_top_exporters_and_rankings(
+                start_year=start_year,
+                end_year=end_year,
+                top_n=top_n,
+                commodity_code=commodity_code,
+            )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in aluminum-top-exporters-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/lng-top-exporters-share-world', methods=['GET'])
+@app.route('/api/lng-top-exporters', methods=['GET'])
+def get_lng_top_exporters_share_world():
+    """Return annual top exporters of LNG as share of world exports (OEC)."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '271111')).strip() or '271111'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_lng_top_exporters_and_rankings(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in lng-top-exporters-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ngl-top-exporters-share-world', methods=['GET'])
+@app.route('/api/ngl-top-exporters', methods=['GET'])
+def get_ngl_top_exporters_share_world():
+    """Return annual top exporters of NGLs as share of world exports (OEC)."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code_raw = str(request.args.get('commodity_code', '271119,271113,271112')).strip()
+        commodity_codes = [code.strip() for code in commodity_code_raw.split(',') if code.strip()]
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_ngl_top_exporters_and_rankings(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_codes=commodity_codes,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in ngl-top-exporters-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sulfur-top-exporters-share-world', methods=['GET'])
+@app.route('/api/sulfur-top-exporters', methods=['GET'])
+def get_sulfur_top_exporters_share_world():
+    """Return annual top exporters of sulfur as share of world exports (OEC)."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '2503')).strip() or '2503'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_sulfur_top_exporters_and_rankings(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in sulfur-top-exporters-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/gulf-sulfur-top-importers', methods=['GET'])
+def get_gulf_sulfur_top_importers():
+    """Return annual top importers of Gulf sulfur exports from OEC."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '2503')).strip() or '2503'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_gulf_sulfur_top_importers(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in gulf-sulfur-top-importers endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/urea-top-exporters-share-world', methods=['GET'])
+@app.route('/api/urea-top-exporters', methods=['GET'])
+def get_urea_top_exporters_share_world():
+    """Return annual top exporters of urea as share of world exports (OEC)."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '310210')).strip() or '310210'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_urea_top_exporters_and_rankings(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in urea-top-exporters-share-world endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/gulf-urea-top-importers', methods=['GET'])
+def get_gulf_urea_top_importers():
+    """Return annual top importers of Gulf urea exports from OEC."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '310210')).strip() or '310210'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_gulf_urea_top_importers(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in gulf-urea-top-importers endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/eurozone-dap-import-dependencies', methods=['GET'])
+def get_eurozone_dap_import_dependencies():
+    """Return annual top non-Eurozone suppliers of Eurozone DAP imports from OEC."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+        commodity_code = str(request.args.get('commodity_code', '310530')).strip() or '310530'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_eurozone_dap_import_dependencies(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in eurozone-dap-import-dependencies endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/eurozone-urea-supplier-structure', methods=['GET'])
+def get_eurozone_urea_supplier_structure():
+    """Return latest-year Eurozone extra-Eurozone urea import shares by supplier."""
+    try:
+        start_year = int(request.args.get('start_year', datetime.now(timezone.utc).year - 10))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 4))
+        commodity_code = str(request.args.get('commodity_code', '310210')).strip() or '310210'
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_oec_eurozone_urea_supplier_structure(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+            commodity_code=commodity_code,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in eurozone-urea-supplier-structure endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/naphtha-net-exports', methods=['GET'])
+def get_naphtha_net_exports():
+    """Return annual naphtha exports share of world exports from UN Energy Statistics."""
+    try:
+        start_year = int(request.args.get('start_year', 2010))
+        end_year = int(request.args.get('end_year', datetime.now(timezone.utc).year - 1))
+        top_n = int(request.args.get('top_n', 5))
+
+        if end_year < start_year:
+            return jsonify({'error': 'end_year must be greater than or equal to start_year'}), 400
+
+        payload = fetch_undata_naphtha_exports_share_world(
+            start_year=start_year,
+            end_year=end_year,
+            top_n=top_n,
+        )
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error in naphtha-net-exports endpoint: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -4877,7 +8316,83 @@ def fetch_eurostat_country_imports_fuel_real_annual(geo='IT'):
     energy_exp_map = series_results.get('energy_exp_map', {})
     oil_imp_map = series_results.get('oil_imp_map', {})
     oil_exp_map = series_results.get('oil_exp_map', {})
-    eurozone_split = fetch_eurozone_oil_gas_split_annual()
+
+    oil_product_codes = {
+        'crude_oil': ['O4100_TOT'],
+        'natural_gas_liquids': ['O4200'],
+        'lpg': ['O4630'],
+        'naphtha': ['O4640'],
+        'aviation_gasoline': ['O4651'],
+        'motor_gasoline': ['O4652'],
+        'gasoline_type_jet_fuel': ['O4653'],
+        'kerosene_jet_fuel': ['O4661'],
+        'diesel': ['O46711'],
+    }
+
+    def fetch_eurostat_oil_products_imports_annual(geo_code, codes):
+        cache_key = f"{geo_code}::{','.join(codes)}"
+        now_local = time.time()
+        cached = EUROSTAT_OIL_PRODUCTS_CACHE.get(cache_key)
+        if cached and (now_local - cached.get('computed_at', 0)) < EUROSTAT_OIL_PRODUCTS_CACHE_TTL_SECONDS:
+            return cached.get('annual_by_code', {})
+
+        base_url = 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/nrg_ti_oil'
+
+        def fetch_monthly(code):
+            params = {
+                'freq': 'A',
+                'siec': code,
+                'partner': 'TOTAL',
+                'unit': 'THS_T',
+                'geo': geo_code,
+            }
+            payload = None
+            last_error = None
+            for attempt in range(1, 3):
+                try:
+                    response = requests.get(base_url, params=params, timeout=30)
+                    response.raise_for_status()
+                    payload = response.json()
+                    break
+                except Exception as e:
+                    last_error = e
+                    print(f"Eurostat oil products fetch failed (attempt {attempt}/2, geo={geo_code}, siec={code}): {e}")
+                    if attempt < 2:
+                        time.sleep(0.8 * attempt)
+            if payload is None:
+                raise RuntimeError(f"Eurostat oil products fetch failed for geo={geo_code}, siec={code}: {last_error}")
+
+            time_index = payload.get('dimension', {}).get('time', {}).get('category', {}).get('index', {})
+            values = payload.get('value', {})
+            annual = {}
+            for year_code, year_pos in time_index.items():
+                year_str = str(year_code)
+                if not year_str.isdigit():
+                    continue
+                value = values.get(str(year_pos))
+                if value is None:
+                    continue
+                annual[int(year_str)] = float(value)
+            return annual
+
+        annual_by_code: dict[str, dict[int, float]] = {}
+        with ThreadPoolExecutor(max_workers=min(4, len(codes))) as executor:
+            futures = {code: executor.submit(fetch_monthly, code) for code in codes}
+            for code, future in futures.items():
+                try:
+                    annual_by_code[code] = future.result()
+                except Exception as e:
+                    print(f"Eurostat oil products annual aggregation failed (geo={geo_code}, siec={code}): {e}")
+                    annual_by_code[code] = {}
+
+        EUROSTAT_OIL_PRODUCTS_CACHE[cache_key] = {
+            'computed_at': now_local,
+            'annual_by_code': annual_by_code,
+        }
+        return annual_by_code
+
+    product_code_list = sorted({code for codes in oil_product_codes.values() for code in codes})
+    oil_products_annual_by_code = fetch_eurostat_oil_products_imports_annual(geo_code, product_code_list)
 
     years = sorted(
         set(total_imp_map.keys()) | set(total_exp_map.keys()) |
@@ -4895,17 +8410,6 @@ def fetch_eurostat_country_imports_fuel_real_annual(geo='IT'):
 
         split_method = 'direct'
         if oil_imports is None and energy_imports is not None:
-            split = eurozone_split.get(int(year))
-            if split:
-                oil_imports = float(energy_imports) * float(split['oil_ratio_in_fuels'])
-                split_method = 'estimated_from_eurozone_fuel_mix'
-
-        if oil_exports is None and energy_exports is not None:
-            split = eurozone_split.get(int(year))
-            if split:
-                oil_exports = float(energy_exports) * float(split['oil_ratio_in_fuels'])
-
-        if split_method == 'direct' and oil_imports is None and energy_imports is not None:
             split_method = 'combined_fuels_only'
 
         total_net = (
@@ -4938,6 +8442,60 @@ def fetch_eurostat_country_imports_fuel_real_annual(geo='IT'):
             energy_share = (energy_imports / total_imports) * 100.0 if energy_imports is not None else None
             other_share = (100.0 - energy_share) if energy_share is not None else None
 
+        fuel_share = energy_share
+
+        crude_oil_tons = oil_products_annual_by_code.get('O4100_TOT', {}).get(year)
+        ngl_tons = oil_products_annual_by_code.get('O4200', {}).get(year)
+        lpg_tons = oil_products_annual_by_code.get('O4630', {}).get(year)
+        naphtha_tons = oil_products_annual_by_code.get('O4640', {}).get(year)
+        aviation_gas_tons = oil_products_annual_by_code.get('O4651', {}).get(year)
+        motor_gas_tons = oil_products_annual_by_code.get('O4652', {}).get(year)
+        gasoline_jet_tons = oil_products_annual_by_code.get('O4653', {}).get(year)
+        kerosene_jet_tons = oil_products_annual_by_code.get('O4661', {}).get(year)
+        diesel_tons = oil_products_annual_by_code.get('O46711', {}).get(year)
+
+        jet_fuel_tons = None
+        if aviation_gas_tons is not None or gasoline_jet_tons is not None or kerosene_jet_tons is not None:
+            jet_fuel_tons = (
+                float(aviation_gas_tons or 0.0) +
+                float(gasoline_jet_tons or 0.0) +
+                float(kerosene_jet_tons or 0.0)
+            )
+
+        product_values = [
+            crude_oil_tons,
+            ngl_tons,
+            lpg_tons,
+            naphtha_tons,
+            jet_fuel_tons,
+            motor_gas_tons,
+            diesel_tons,
+        ]
+        total_products_tons = sum(v for v in product_values if v is not None) if any(v is not None for v in product_values) else None
+
+        def split_fuel_share(value_tons):
+            if value_tons is None or fuel_share is None or total_products_tons in (None, 0):
+                return None
+            return (float(value_tons) / float(total_products_tons)) * float(fuel_share)
+
+        crude_oil_share = split_fuel_share(crude_oil_tons)
+        ngl_share = split_fuel_share(ngl_tons)
+        lpg_share = split_fuel_share(lpg_tons)
+        naphtha_share = split_fuel_share(naphtha_tons)
+        jet_fuel_share = split_fuel_share(jet_fuel_tons)
+        motor_gas_share = split_fuel_share(motor_gas_tons)
+        kerosene_jet_share = split_fuel_share(kerosene_jet_tons)
+        diesel_share = split_fuel_share(diesel_tons)
+
+        if fuel_share is not None and total_products_tons not in (None, 0):
+            allocated = sum(
+                v for v in [
+                    crude_oil_share, ngl_share, lpg_share, naphtha_share,
+                    jet_fuel_share, motor_gas_share, diesel_share
+                ] if v is not None
+            )
+            gas_share = max(0.0, fuel_share - allocated)
+
         points.append({
             'year': int(year),
             'total_imports_million_eur': total_imports,
@@ -4956,6 +8514,14 @@ def fetch_eurostat_country_imports_fuel_real_annual(geo='IT'):
             'gas_share_pct': gas_share,
             'other_share_pct': other_share,
             'oil_gas_split_method': split_method,
+            'crude_oil_share_pct': (round(crude_oil_share, 3) if crude_oil_share is not None else None),
+            'natural_gas_liquids_share_pct': (round(ngl_share, 3) if ngl_share is not None else None),
+            'lpg_share_pct': (round(lpg_share, 3) if lpg_share is not None else None),
+            'naphtha_share_pct': (round(naphtha_share, 3) if naphtha_share is not None else None),
+            'jet_fuel_share_pct': (round(jet_fuel_share, 3) if jet_fuel_share is not None else None),
+            'motor_gasoline_share_pct': (round(motor_gas_share, 3) if motor_gas_share is not None else None),
+            'kerosene_jet_fuel_share_pct': (round(kerosene_jet_share, 3) if kerosene_jet_share is not None else None),
+            'diesel_share_pct': (round(diesel_share, 3) if diesel_share is not None else None),
         })
 
     payload = {
@@ -4969,7 +8535,14 @@ def fetch_eurostat_country_imports_fuel_real_annual(geo='IT'):
         'unit': 'million EUR',
         'net_imports_method': 'net imports = imports - exports',
         'share_method': 'Shares are based on imports only (component imports / total imports).',
-        'oil_gas_split_note': 'Oil/gas split is estimated from Eurozone annual fuel mix when country-level oil code is unavailable.',
+        'oil_gas_split_note': (
+            'Oil/gas split is only shown when country-level oil series is available; '
+            'missing years are left blank (no estimation). '
+            'Oil product detail is allocated by tonnage shares from Eurostat nrg_ti_oil (partner=TOTAL, unit=THS_T) '
+            'and scaled to the fuel share of total imports.'
+        ),
+        'oil_product_codes': oil_product_codes,
+        'oil_product_unit': 'THS_T',
         'start_year': years[0] if years else None,
         'end_year': years[-1] if years else None,
         'points': points,

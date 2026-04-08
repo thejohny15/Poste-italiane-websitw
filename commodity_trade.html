@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Commodity Trade — Aluminium Exporters</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Commodity Trade — Aluminium Exporters</h1>
+            <p class="subtitle">Top exporters (share of world exports) and Middle East ranking risk</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="energy_trade.html" class="nav-link">Energy Trade Section</a>
+                <a href="energy_europe.html" class="nav-link">Energy in Europe</a>
+                <a href="oil_dual_api.html" class="nav-link">Oil Dual API</a>
+                <a href="commodity_trade.html" class="nav-link active">Commodity Trade</a>
+                <a href="sulfur.html" class="nav-link">Sulfur</a>
+                <a href="urea.html" class="nav-link">Urea</a>
+            </div>
+            <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
+                Checking server status...
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Aluminium Exporters — Top 5</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="aluminumTopExportersTitle" class="chart-title">Loading top exporters…</h3>
+                <canvas id="aluminumTopExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadAluminumTopExportersBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download exporters graph (PNG)
+                </button>
+            </div>
+
+            <h2 class="section-title">Middle East Exporters — Ranking Snapshot</h2>
+            <div class="chart-container" style="height: 360px;">
+                <h3 id="aluminumRankingTitle" class="chart-title">Latest available ranking</h3>
+                <div id="aluminumRankingTable" class="methodology-note" style="margin-top: 10px;"></div>
+            </div>
+
+            <div class="methodology-note" style="margin-top: 14px;">
+                <strong>Scope:</strong> HS 7601 (Aluminium, unwrought). Middle East focus: UAE, Bahrain, Qatar. Secondary risk: Saudi Arabia, Oman.
+            </div>
+        </main>
+    </div>
+
+    <script src="commodity_trade.js"></script>
+</body>
+</html>

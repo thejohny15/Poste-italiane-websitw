@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Methyl Alcohol Exporters</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Methyl Alcohol Exporters</h1>
+            <p class="subtitle">Top 4 exporters of methyl alcohol and Gulf / Hormuz countries combined</p>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Treasury Dashboard</a>
+                <a href="commodity_trade.html" class="nav-link">Commodity Trade</a>
+                <a href="sulfur.html" class="nav-link">Sulfur</a>
+                <a href="urea.html" class="nav-link">Urea</a>
+                <a href="potash.html" class="nav-link">Potash</a>
+                <a href="methyl_alcohol.html" class="nav-link active">Methyl Alcohol</a>
+            </div>
+        </header>
+
+        <main>
+            <h2 class="section-title">Share of World Exports</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="methylAlcoholExportersTitle" class="chart-title">Top 4 exporters of methyl alcohol and Gulf / Hormuz countries combined (2024)</h3>
+                <canvas id="methylAlcoholExportersChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadMethylAlcoholChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download graph (PNG)
+                </button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>Top 4 Combined Share</h3>
+                    <p id="methylAlcoholTop4CombinedShare">47.6%</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Gulf / Hormuz Share</h3>
+                    <p id="methylAlcoholGulfCombinedShare">41.29%</p>
+                </div>
+            </div>
+
+            <div class="methodology-note" style="margin-top: 18px;">
+                <strong>Source:</strong> OEC, Methyl alcohol, HS6 <code>290511</code>, HS17 trade dataset, exporter view for <code>2024</code>.
+                <br>
+                <strong>OEC page:</strong> <a href="https://oec.world/en/visualize/tree_map/hs17/export/show/all/6290511/2024" target="_blank" rel="noopener noreferrer">Methyl alcohol export visualization</a>
+                <br>
+                <strong>Measure:</strong> each bar is exporter trade value divided by total world exports for HS6 <code>290511</code>.
+                <br>
+                <strong>Gulf / Hormuz assumption:</strong> combined group includes Bahrain, Iran, Iraq, Kuwait, Oman, Qatar, Saudi Arabia, and United Arab Emirates. In the 2024 OEC data for this product, Oman, Saudi Arabia, the UAE, Iran, Qatar, Bahrain, and Iraq show non-zero exports.
+                <br>
+                <strong>Why only top 4:</strong> the United Arab Emirates ranks fifth in the OEC 2024 exporter data, but the chart is restricted to the requested top four exporters plus the combined Gulf / Hormuz group.
+            </div>
+
+            <h2 class="section-title">Eurozone Import Structure</h2>
+            <div class="chart-container" style="height: 560px;">
+                <h3 id="methylAlcoholEurozoneTitle" class="chart-title">Where Eurozone countries import methyl alcohol from (extra-Eurozone, 2024)</h3>
+                <canvas id="methylAlcoholEurozoneChart"></canvas>
+            </div>
+            <div style="margin-top: 10px; margin-bottom: 8px;">
+                <button id="downloadMethylAlcoholEurozoneChartBtn" type="button" style="padding: 8px 12px; border: 1px solid #D1D5DB; border-radius: 6px; background: #F9FAFB; cursor: pointer;">
+                    Download Eurozone graph (PNG)
+                </button>
+            </div>
+
+            <div class="methodology-note" style="margin-top: 18px;">
+                <strong>Scope:</strong> extra-Eurozone methyl alcohol imports by Eurozone countries in <code>2024</code>, aggregated across the Eurozone and shown as supplier shares.
+                <br>
+                <strong>Gulf grouping in this chart:</strong> Bahrain, Iran, Iraq, Kuwait, Oman, Qatar, Saudi Arabia, and the United Arab Emirates.
+                <br>
+                <strong>Top supplier note:</strong> the chart shows the top four extra-Eurozone suppliers individually plus the combined Gulf countries bar.
+            </div>
+        </main>
+    </div>
+
+    <script src="methyl_alcohol.js"></script>
+</body>
+</html>

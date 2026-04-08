@@ -28,6 +28,8 @@
                 <a href="ai_utilization.html" class="nav-link">AI Utilization</a>
                 <a href="energy_trade.html" class="nav-link active">Energy Trade Section</a>
                 <a href="energy_europe.html" class="nav-link">Energy in Europe</a>
+                <a href="sulfur.html" class="nav-link">Sulfur</a>
+                <a href="urea.html" class="nav-link">Urea</a>
             </div>
             <div id="serverStatus" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 14px;">
                 Checking server status...
@@ -62,20 +64,18 @@
                 <canvas id="petrochemCountriesChart"></canvas>
             </div>
 
+            <h2 class="section-title">Petrochemicals Exports</h2>
+            <div class="chart-container" style="height: 520px; margin-top: 20px;">
+                <h3 id="petrochemTopExportersTitle" class="chart-title">Top petrochemicals exporters share of world exports</h3>
+                <button id="downloadPetrochemTopExportersBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
+                <canvas id="petrochemTopExportersChart"></canvas>
+            </div>
+
             <h2 class="section-title">Fertilizer Exports</h2>
             <div class="chart-container" style="height: 520px; margin-top: 20px;">
                 <h3 id="fertilizerExportsTitle" class="chart-title">Selected countries share of world fertilizer exports</h3>
                 <button id="downloadFertilizerExportsBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
                 <canvas id="fertilizerExportsChart"></canvas>
-            </div>
-
-            <h2 class="section-title">US Oil & Gas Net Trade</h2>
-                <h2 class="section-title">US Oil & Gas Net Exports</h2>
-            <div class="chart-container" style="height: 520px; margin-top: 20px;">
-                <h3 id="usFuelTitle" class="chart-title">United States oil and gas net trade (real data)</h3>
-                    <h3 id="usFuelTitle" class="chart-title">United States oil and gas net exports (real data)</h3>
-                <button id="downloadUsChartBtn" type="button" style="margin-bottom: 10px;">Download graph (PNG)</button>
-                <canvas id="usImportsChart"></canvas>
             </div>
 
             <h2 class="section-title">Italy Import Composition</h2>
